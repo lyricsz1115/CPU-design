@@ -1,0 +1,40 @@
+# Vivado generated files
+*.jou
+*.log
+*.str
+*.bit
+*.ltx
+*.rpt
+*.dcp
+*.xpr
+*.wdb
+*.pb
+*.xml
+*.html
+*.zip
+
+# Vivado generated directories
+*.runs/
+*.cache/
+*.hw/
+*.ip_user_files/
+*.sim/
+*.gen/
+*.srcs/
+.Xil/
+
+# Simulation outputs
+work/
+*.vvp
+*.vcd
+*.fst
+*.ghw
+
+# Course/private materials
+*.pdf
+
+# OS/editor files
+Thumbs.db
+Desktop.ini
+.DS_Store
+.vscode/
