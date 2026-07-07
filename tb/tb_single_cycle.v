@@ -6,7 +6,7 @@ module tb_single_cycle;
     wire [31:0] debug_pc;
     wire [31:0] debug_dmem0;
 
-    cpu_top #(.INIT_FILE("program/sum.mem")) dut(
+    cpu_top #(.INIT_FILE("sum.mem")) dut(
         .clk(clk),
         .rst(rst),
         .debug_pc(debug_pc),

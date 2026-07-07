@@ -6,7 +6,7 @@ module minisys_top(
     wire [31:0] debug_pc;
     wire [31:0] debug_dmem0;
 
-    pipeline_cpu_top #(.INIT_FILE("program/sum.mem")) u_cpu(
+    cpu_top #(.INIT_FILE("sum.mem")) u_cpu(
         .clk(clk),
         .rst(rst_btn),
         .debug_pc(debug_pc),

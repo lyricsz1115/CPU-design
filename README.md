@@ -1,26 +1,30 @@
-# Minisys 实验 B CPU 项目骨架
+﻿# CPU-design
 
-这是一个从零开始的 Verilog 处理器课程设计骨架，用于 Minisys FPGA 开发板上的实验 B。
+Verilog CPU course project for the `Minisys` FPGA board.
 
-## 目录结构
+Current verified status:
 
-| 目录 | 内容 |
+- Single-cycle CPU (`cpu_top`) passes simulation.
+- Single-cycle CPU is verified on `Minisys`.
+- Board output shows `00110111`, which matches `dmem[0] = 55`.
+
+## Repository Layout
+
+| Path | Description |
 | --- | --- |
-| `src/` | CPU RTL 源码模块 |
-| `tb/` | 仿真测试平台 |
-| `program/` | 十六进制机器码初始化文件 |
-| `doc/` | 小组分工、集成流程和报告说明 |
-| `vivado/` | Minisys 约束文件模板 |
+| `src/` | CPU RTL source files |
+| `tb/` | testbenches |
+| `program/` | memory initialization files (`.mem`) |
+| `vivado/` | board constraint file |
+| `doc/` | handoff notes and report-related docs |
 
-## 当前实现目标
+## Implemented Modules
 
-- `cpu_top.v`：单周期 RV32I 子集 CPU。
-- `pipeline_cpu_top.v`：五级流水线 CPU 骨架，包含前推、load-use 暂停和分支 flush。
-- `minisys_top.v`：面向开发板的顶层模块，把程序结果低 8 位输出到 LED。
+- `cpu_top.v`: single-cycle RV32I-subset CPU
+- `pipeline_cpu_top.v`: 5-stage pipeline CPU framework
+- `minisys_top.v`: board-level top module for `Minisys`
 
-## 支持的基础指令
-
-当前基础子集：
+## Supported Instructions
 
 ```text
 add, sub, and, or
@@ -30,31 +34,92 @@ beq
 jal
 ```
 
-`alu_control.v` 中已经预留了 `xor` 和 `slt` 的 ALU 控制码，后续可以继续扩展。
+## Verified Board Mapping
 
-## 建议仿真命令
+The current `vivado/minisys_template.xdc` is already updated for the `Minisys` board used in this project:
 
-如果电脑上安装了 Icarus Verilog，可以在项目根目录运行：
+- `clk` -> `Y18` (100 MHz)
+- `rst_btn` -> `P20` (`S6`, active high)
+- `led[7:0]` -> red LEDs `RLD0~RLD7`
 
-```powershell
-iverilog -g2012 -I src -o work/single_cycle_tb.vvp tb/tb_single_cycle.v src/*.v
-vvp work/single_cycle_tb.vvp
+Board-level output:
 
-iverilog -g2012 -I src -o work/pipeline_tb.vvp tb/tb_pipeline.v src/*.v
-vvp work/pipeline_tb.vvp
+```text
+led = debug_dmem0[7:0]
 ```
 
-如果使用 Vivado：
+So when the basic program finishes with `dmem[0] = 55`, the red LEDs show:
 
-1. 新建 RTL Project。
-2. 添加 `src/` 中所有 Verilog 文件。
-3. 仿真时添加 `tb/` 中对应 testbench。
-4. 上板时设置 `minisys_top` 为顶层模块。
-5. 用 Minisys 官方约束替换 `vivado/minisys_template.xdc` 中的占位引脚。
-6. 依次运行综合、实现、生成 bitstream 并烧录开发板。
+```text
+00110111
+```
 
-## 推荐开展顺序
+## Important Vivado Note
 
-1. 先跑通 `cpu_top.v` 对应的单周期求和程序，期望 `dmem[0] = 55`。
-2. 再跑通 `pipeline_cpu_top.v` 的带冒险测试程序。
-3. 最后整理 Vivado 的资源、频率和仿真波形，用于报告中的 PPA 分析。
+Instruction memory is loaded through `$readmemh`.
+
+This repository uses:
+
+```verilog
+.INIT_FILE("sum.mem")
+```
+
+That means `program/sum.mem` must be added into the Vivado project before simulation or synthesis.
+
+If Vivado reports it cannot open `sum.mem`:
+
+1. Add `program/sum.mem` to the project
+2. Re-run simulation or synthesis
+3. Check logs for `$readmemh` warnings
+
+If `sum.mem` is missing during synthesis, the board may program successfully but all LEDs stay off because `imem` is empty.
+
+## Basic Verification Flow
+
+### Simulation
+
+Use:
+
+- `tb/tb_single_cycle.v`
+
+Expected result:
+
+```text
+PASS: single-cycle sum dmem[0]=55
+```
+
+### Board Test
+
+1. Build bitstream with `minisys_top` as top module
+2. Program device through Vivado Hardware Manager
+3. Press and release `S6` if needed
+4. Check red LEDs
+
+Expected LED value:
+
+```text
+00110111
+```
+
+## Recommended Next Step
+
+After the single-cycle version is stable, move to pipeline verification:
+
+1. Run `tb_pipeline.v`
+2. Verify `hazard.mem`
+3. Verify `load_use.mem`
+4. Verify `branch.mem`
+5. Only then move the pipeline version to board-level testing
+
+## Handoff
+
+See:
+
+- [doc/handoff_status.md](doc/handoff_status.md)
+
+That file records:
+
+- verified board pins
+- current stable status
+- known Vivado path issue around `sum.mem`
+- recommended Git workflow for handoff
