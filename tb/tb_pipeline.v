@@ -3,19 +3,131 @@
 module tb_pipeline;
     reg clk;
     reg rst;
-    wire [31:0] debug_pc;
-    wire [31:0] debug_dmem0;
 
-    pipeline_cpu_top #(.INIT_FILE("program/hazard.mem")) dut(
+    wire nop_stall;
+    wire nop_flush;
+    wire nop_valid;
+    wire [31:0] nop_cycle_count;
+    wire [31:0] nop_instret_count;
+    wire [31:0] nop_stall_count;
+    wire [31:0] nop_flush_count;
+    wire [31:0] nop_pc;
+    wire [31:0] nop_dmem0;
+    wire [31:0] nop_dmem1;
+
+    wire hazard_stall;
+    wire hazard_flush;
+    wire hazard_valid;
+    wire [31:0] hazard_cycle_count;
+    wire [31:0] hazard_instret_count;
+    wire [31:0] hazard_stall_count;
+    wire [31:0] hazard_flush_count;
+    wire [31:0] hazard_pc;
+    wire [31:0] hazard_dmem0;
+    wire [31:0] hazard_dmem1;
+
+    wire load_stall;
+    wire load_flush;
+    wire load_valid;
+    wire [31:0] load_cycle_count;
+    wire [31:0] load_instret_count;
+    wire [31:0] load_stall_count;
+    wire [31:0] load_flush_count;
+    wire [31:0] load_pc;
+    wire [31:0] load_dmem0;
+    wire [31:0] load_dmem1;
+
+    wire branch_stall;
+    wire branch_flush;
+    wire branch_valid;
+    wire [31:0] branch_cycle_count;
+    wire [31:0] branch_instret_count;
+    wire [31:0] branch_stall_count;
+    wire [31:0] branch_flush_count;
+    wire [31:0] branch_pc;
+    wire [31:0] branch_dmem0;
+    wire [31:0] branch_dmem1;
+
+    reg load_stall_seen;
+    reg branch_flush_seen;
+
+    pipeline_cpu_top #(.INIT_FILE("pipeline_nop.mem")) dut_nop(
         .clk(clk),
         .rst(rst),
-        .debug_pc(debug_pc),
-        .debug_dmem0(debug_dmem0)
+        .stall_debug(nop_stall),
+        .flush_debug(nop_flush),
+        .inst_valid_debug(nop_valid),
+        .debug_cycle_count(nop_cycle_count),
+        .debug_instret_count(nop_instret_count),
+        .debug_stall_count(nop_stall_count),
+        .debug_flush_count(nop_flush_count),
+        .debug_pc(nop_pc),
+        .debug_dmem0(nop_dmem0),
+        .debug_dmem1(nop_dmem1)
+    );
+
+    pipeline_cpu_top #(.INIT_FILE("hazard.mem")) dut_hazard(
+        .clk(clk),
+        .rst(rst),
+        .stall_debug(hazard_stall),
+        .flush_debug(hazard_flush),
+        .inst_valid_debug(hazard_valid),
+        .debug_cycle_count(hazard_cycle_count),
+        .debug_instret_count(hazard_instret_count),
+        .debug_stall_count(hazard_stall_count),
+        .debug_flush_count(hazard_flush_count),
+        .debug_pc(hazard_pc),
+        .debug_dmem0(hazard_dmem0),
+        .debug_dmem1(hazard_dmem1)
+    );
+
+    pipeline_cpu_top #(.INIT_FILE("load_use.mem")) dut_load(
+        .clk(clk),
+        .rst(rst),
+        .stall_debug(load_stall),
+        .flush_debug(load_flush),
+        .inst_valid_debug(load_valid),
+        .debug_cycle_count(load_cycle_count),
+        .debug_instret_count(load_instret_count),
+        .debug_stall_count(load_stall_count),
+        .debug_flush_count(load_flush_count),
+        .debug_pc(load_pc),
+        .debug_dmem0(load_dmem0),
+        .debug_dmem1(load_dmem1)
+    );
+
+    pipeline_cpu_top #(.INIT_FILE("branch.mem")) dut_branch(
+        .clk(clk),
+        .rst(rst),
+        .stall_debug(branch_stall),
+        .flush_debug(branch_flush),
+        .inst_valid_debug(branch_valid),
+        .debug_cycle_count(branch_cycle_count),
+        .debug_instret_count(branch_instret_count),
+        .debug_stall_count(branch_stall_count),
+        .debug_flush_count(branch_flush_count),
+        .debug_pc(branch_pc),
+        .debug_dmem0(branch_dmem0),
+        .debug_dmem1(branch_dmem1)
     );
 
     initial begin
         clk = 1'b0;
         forever #5 clk = ~clk;
+    end
+
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin
+            load_stall_seen <= 1'b0;
+            branch_flush_seen <= 1'b0;
+        end else begin
+            if (load_stall) begin
+                load_stall_seen <= 1'b1;
+            end
+            if (branch_flush) begin
+                branch_flush_seen <= 1'b1;
+            end
+        end
     end
 
     initial begin
@@ -24,12 +136,55 @@ module tb_pipeline;
         rst = 1'b0;
         repeat (80) @(posedge clk);
 
-        if (debug_dmem0 !== 32'd5) begin
-            $display("FAIL: pipeline hazard expected dmem[0]=5, got %0d", debug_dmem0);
+        if (nop_dmem0 !== 32'd2) begin
+            $display("FAIL: pipeline_nop expected dmem[0]=2, got %0d", nop_dmem0);
             $finish;
         end
 
-        $display("PASS: pipeline hazard dmem[0]=%0d", debug_dmem0);
+        if (hazard_dmem0 !== 32'd5) begin
+            $display("FAIL: hazard expected dmem[0]=5, got %0d", hazard_dmem0);
+            $finish;
+        end
+
+        if (load_dmem1 !== 32'd200) begin
+            $display("FAIL: load_use expected dmem[1]=200, got %0d", load_dmem1);
+            $finish;
+        end
+
+        if (!load_stall_seen) begin
+            $display("FAIL: load_use did not raise stall_debug");
+            $finish;
+        end
+
+        if (load_stall_count == 32'b0) begin
+            $display("FAIL: load_use stall counter did not increment");
+            $finish;
+        end
+
+        if (branch_dmem0 !== 32'd7) begin
+            $display("FAIL: branch expected dmem[0]=7, got %0d", branch_dmem0);
+            $finish;
+        end
+
+        if (!branch_flush_seen) begin
+            $display("FAIL: branch did not raise flush_debug");
+            $finish;
+        end
+
+        if (branch_flush_count == 32'b0) begin
+            $display("FAIL: branch flush counter did not increment");
+            $finish;
+        end
+
+        $display("PERF pipeline_nop: cycle=%0d instret=%0d stall=%0d flush=%0d",
+            nop_cycle_count, nop_instret_count, nop_stall_count, nop_flush_count);
+        $display("PERF hazard: cycle=%0d instret=%0d stall=%0d flush=%0d",
+            hazard_cycle_count, hazard_instret_count, hazard_stall_count, hazard_flush_count);
+        $display("PERF load_use: cycle=%0d instret=%0d stall=%0d flush=%0d",
+            load_cycle_count, load_instret_count, load_stall_count, load_flush_count);
+        $display("PERF branch: cycle=%0d instret=%0d stall=%0d flush=%0d",
+            branch_cycle_count, branch_instret_count, branch_stall_count, branch_flush_count);
+        $display("PASS: pipeline nop, forwarding, load-use stall, and branch flush tests passed");
         $finish;
     end
 endmodule

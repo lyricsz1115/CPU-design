@@ -9,6 +9,7 @@ module control(
     output reg [1:0] alu_op,
     output reg mem_write,
     output reg alu_src,
+    output reg alu_a_zero,
     output reg reg_write
 );
     always @(*) begin
@@ -19,6 +20,7 @@ module control(
         alu_op = 2'b00;
         mem_write = 1'b0;
         alu_src = 1'b0;
+        alu_a_zero = 1'b0;
         reg_write = 1'b0;
 
         case (opcode)
@@ -47,6 +49,12 @@ module control(
             end
             `OPCODE_JAL: begin
                 jal = 1'b1;
+                reg_write = 1'b1;
+            end
+            `OPCODE_LUI: begin
+                alu_src = 1'b1;
+                alu_a_zero = 1'b1;
+                alu_op = 2'b00;
                 reg_write = 1'b1;
             end
         endcase

@@ -9,6 +9,8 @@
 | `hazard.mem` | ALU 数据前推测试 | `dmem[0] = 5` |
 | `load_use.mem` | load-use 暂停测试 | `dmem[1] = 200` |
 | `branch.mem` | 分支 flush 测试 | `dmem[0] = 7` |
+| `io_led.mem` | 内存映射 LED I/O 测试 | `led = 8'h55` |
+| `perf_demo.mem` | 性能计数演示程序 | 用于记录周期数和提交指令数 |
 
 说明：
 

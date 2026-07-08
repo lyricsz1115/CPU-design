@@ -7,6 +7,7 @@
 `define OPCODE_STORE  7'b0100011
 `define OPCODE_BRANCH 7'b1100011
 `define OPCODE_JAL    7'b1101111
+`define OPCODE_LUI    7'b0110111
 
 `define ALU_ADD 4'b0000
 `define ALU_SUB 4'b0001
