@@ -8,6 +8,8 @@
 - 单周期 CPU 已在 `Minisys` 板上跑通
 - 板级红色 LED 显示 `00110111`
 - `00110111 = 0x37 = 55`，对应 `dmem[0] = 55`
+- 进阶 I/O、性能计数、五级流水线和板上可编辑指令装载均已完成仿真验证
+- `editable_minisys_top` 支持通过 SW 开关和 S1/S4 按键在板上写入并运行新程序，已加入按键去抖
 
 ## 目录结构
 
@@ -25,7 +27,7 @@
 - `pipeline_cpu_top.v`：五级流水 CPU，支持 forwarding、load-use stall、BTFNT 静态分支预测和 flush
 - `minisys_top.v`：`Minisys` 板级顶层
 - `editable_minisys_top.v`：可通过开关/按键装载指令的板级顶层
-- `instr_loader.v`：将 4 次 8-bit 开关输入组装成 1 条 32-bit 指令并写入 `imem`
+- `instr_loader.v`：将 4 次 8-bit 开关输入组装成 1 条 32-bit 指令并写入 `imem`，包含按键同步和去抖
 
 ## 当前支持的指令
 
@@ -111,16 +113,14 @@ PASS: single-cycle sum dmem[0]=55
 00110111
 ```
 
-## 建议的下一步
+## 当前建议验证流程
 
-单周期版本稳定后，下一阶段建议先做流水线仿真，再考虑流水线上板：
-
-1. 运行 `tb_pipeline.v`
-2. 验证 `hazard.mem`
-3. 验证 `load_use.mem`
-4. 验证 `branch.mem`
-5. 验证 `branch_predict.mem`
-6. 仿真稳定后再切换到流水线板级测试
+1. 运行 `tb_single_cycle.v`，确认单周期求和程序输出 `55`。
+2. 运行 `tb_io_system.v`，确认内存映射 LED I/O 输出 `0x55`。
+3. 运行 `tb_perf_counter.v`，确认 cycle、instret、stall、flush 计数正确。
+4. 运行 `tb_pipeline.v`，确认 nop、forwarding、load-use stall、BTFNT 分支预测和 flush 全部通过。
+5. 运行 `tb_editable_loader.v`，确认开关/按键逐 byte 装载程序后 CPU 输出 `0x37`。
+6. 上板时分别选择 `minisys_top`、`system_minisys_top`、`pipeline_minisys_top` 或 `editable_minisys_top` 作为顶层生成 bitstream。
 
 ## 交接说明
 
@@ -143,7 +143,7 @@ PASS: single-cycle sum dmem[0]=55
 - `system_top`：单周期 CPU + 内存映射 I/O + 性能计数。
 - `system_minisys_top`：进阶 I/O 上板顶层。
 - `pipeline_minisys_top`：流水线 CPU 上板顶层。
-- `editable_minisys_top`：开关/按键写入指令存储器的可编辑上板顶层。
+- `editable_minisys_top`：开关/按键写入指令存储器的可编辑上板顶层，真实按键输入已加入去抖。
 - `tb_io_system`：I/O 系统仿真。
 - `tb_perf_counter`：性能计数仿真。
 - `tb_pipeline`：流水线冒险综合测试，覆盖数据前推、load-use 暂停、BTFNT 分支预测和 flush。
@@ -162,10 +162,11 @@ PASS: single-cycle sum dmem[0]=55
 
 ```text
 sw[7:0]      当前 8-bit 指令片段
-btn_write    写入当前 byte，4 次组成 1 条 32-bit 指令
-btn_next     跳到下一条指令地址
-btn_clear    回到装载模式并清零装载地址
-btn_run      开始运行 CPU
+btn_write/S1 写入当前 byte，4 次组成 1 条 32-bit 指令
+btn_next/S2  跳到下一条指令地址，连续输入完整程序时通常不用按
+btn_clear/S3 回到装载模式并清零装载地址
+btn_run/S4   开始运行 CPU
+rst_btn/S6   顶层复位
 ```
 
 写入顺序为小端序：
@@ -182,6 +183,24 @@ btn_run      开始运行 CPU
 ```text
 PASS: editable loader wrote instructions through switches/buttons and CPU produced led=0x37
 ```
+
+上板操作要点：
+
+1. 按 S3 清空装载状态。
+2. 按板子丝印编号设置 `SW0` 到 `SW7`。
+3. 每输入一个 byte，按一次 S1。
+4. 每满 4 个 byte，装载器会自动写入一条 32-bit 指令并进入下一条地址。
+5. 连续输入完整程序时不需要按 S2。
+6. 输入完成后按 S4 运行。
+7. LED 显示 `dmem[0][7:0]`；如果 `dmem[0]` 还没有被写入，则显示 PC 调试信息。
+
+已经手动验证过的短程序：
+
+| 功能 | 小端输入 byte 序列 | 预期 LED |
+| --- | --- | --- |
+| 输出 10 | `93 00 a0 00 23 20 10 00 6f 00 00 00` | `00001010` |
+| 7 + 8 输出 15 | `93 00 70 00 13 01 80 00 b3 81 20 00 23 20 30 00 6f 00 00 00` | `00001111` |
+| 8 - 5 输出 3 | `93 00 80 00 13 01 50 00 b3 81 20 40 23 20 30 00 6f 00 00 00` | `00000011` |
 
 `vivado/editable_minisys_template.xdc` 已按 Minisys 硬件手册映射：
 

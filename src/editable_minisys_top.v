@@ -1,4 +1,6 @@
-module editable_minisys_top(
+module editable_minisys_top #(
+    parameter DEBOUNCE_CYCLES = 1000000
+)(
     input wire clk,
     input wire rst_btn,
     input wire [7:0] sw,
@@ -28,7 +30,9 @@ module editable_minisys_top(
     wire [7:0] load_addr_display = {instr_index[3:0], byte_index, 2'b00};
     wire [7:0] load_display = blink_count[24] ? sw : load_addr_display;
 
-    instr_loader u_loader(
+    instr_loader #(
+        .DEBOUNCE_CYCLES(DEBOUNCE_CYCLES)
+    ) u_loader(
         .clk(clk),
         .rst(rst_btn),
         .sw(sw),

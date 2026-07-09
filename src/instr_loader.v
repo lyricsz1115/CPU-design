@@ -1,5 +1,6 @@
 module instr_loader #(
-    parameter ADDR_WIDTH = 8
+    parameter ADDR_WIDTH = 8,
+    parameter DEBOUNCE_CYCLES = 1
 )(
     input wire clk,
     input wire rst,
@@ -16,27 +17,45 @@ module instr_loader #(
     output reg [1:0] byte_index,
     output reg [31:0] current_word
 );
-    reg btn_write_d;
-    reg btn_next_d;
-    reg btn_clear_d;
-    reg btn_run_d;
+    localparam DEBOUNCE_WIDTH = 20;
 
-    wire write_pulse = btn_write & ~btn_write_d;
-    wire next_pulse = btn_next & ~btn_next_d;
-    wire clear_pulse = btn_clear & ~btn_clear_d;
-    wire run_pulse = btn_run & ~btn_run_d;
+    reg [3:0] btn_meta;
+    reg [3:0] btn_sync;
+    reg [3:0] btn_state;
+    reg [3:0] btn_state_d;
+    reg [DEBOUNCE_WIDTH-1:0] debounce_count [0:3];
+    integer i;
+
+    wire [3:0] btn_raw = {btn_run, btn_clear, btn_next, btn_write};
+    wire write_pulse = btn_state[0] & ~btn_state_d[0];
+    wire next_pulse = btn_state[1] & ~btn_state_d[1];
+    wire clear_pulse = btn_state[2] & ~btn_state_d[2];
+    wire run_pulse = btn_state[3] & ~btn_state_d[3];
 
     always @(posedge clk or posedge rst) begin
         if (rst) begin
-            btn_write_d <= 1'b0;
-            btn_next_d <= 1'b0;
-            btn_clear_d <= 1'b0;
-            btn_run_d <= 1'b0;
+            btn_meta <= 4'b0;
+            btn_sync <= 4'b0;
+            btn_state <= 4'b0;
+            btn_state_d <= 4'b0;
+            for (i = 0; i < 4; i = i + 1) begin
+                debounce_count[i] <= {DEBOUNCE_WIDTH{1'b0}};
+            end
         end else begin
-            btn_write_d <= btn_write;
-            btn_next_d <= btn_next;
-            btn_clear_d <= btn_clear;
-            btn_run_d <= btn_run;
+            btn_meta <= btn_raw;
+            btn_sync <= btn_meta;
+            btn_state_d <= btn_state;
+
+            for (i = 0; i < 4; i = i + 1) begin
+                if (btn_sync[i] == btn_state[i]) begin
+                    debounce_count[i] <= {DEBOUNCE_WIDTH{1'b0}};
+                end else if (debounce_count[i] >= DEBOUNCE_CYCLES - 1) begin
+                    btn_state[i] <= btn_sync[i];
+                    debounce_count[i] <= {DEBOUNCE_WIDTH{1'b0}};
+                end else begin
+                    debounce_count[i] <= debounce_count[i] + {{(DEBOUNCE_WIDTH-1){1'b0}}, 1'b1};
+                end
+            end
         end
     end
 

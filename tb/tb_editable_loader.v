@@ -10,7 +10,9 @@ module tb_editable_loader;
     reg btn_run;
     wire [7:0] led;
 
-    editable_minisys_top dut(
+    editable_minisys_top #(
+        .DEBOUNCE_CYCLES(1)
+    ) dut(
         .clk(clk),
         .rst_btn(rst_btn),
         .sw(sw),
@@ -32,10 +34,10 @@ module tb_editable_loader;
             sw = value;
             @(negedge clk);
             btn_write = 1'b1;
-            @(posedge clk);
+            repeat (4) @(posedge clk);
             @(negedge clk);
             btn_write = 1'b0;
-            @(posedge clk);
+            repeat (4) @(posedge clk);
         end
     endtask
 
@@ -43,10 +45,10 @@ module tb_editable_loader;
         begin
             @(negedge clk);
             btn_run = 1'b1;
-            @(posedge clk);
+            repeat (4) @(posedge clk);
             @(negedge clk);
             btn_run = 1'b0;
-            @(posedge clk);
+            repeat (4) @(posedge clk);
         end
     endtask
 
