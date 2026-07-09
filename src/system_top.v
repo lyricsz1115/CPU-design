@@ -32,6 +32,9 @@ module system_top #(
     ) u_cpu (
         .clk(clk),
         .rst(rst),
+        .imem_write_enable(1'b0),
+        .imem_write_addr(32'b0),
+        .imem_write_data(32'b0),
         .external_read_data(bus_read_data),
         .external_mem_read(bus_mem_read),
         .external_mem_write(bus_mem_write),

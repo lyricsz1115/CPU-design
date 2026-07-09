@@ -5,6 +5,7 @@ module pipeline_minisys_top(
 );
     wire stall_debug;
     wire flush_debug;
+    wire predict_taken_debug;
     wire inst_valid_debug;
     wire [31:0] debug_cycle_count;
     wire [31:0] debug_instret_count;
@@ -19,6 +20,7 @@ module pipeline_minisys_top(
         .rst(rst_btn),
         .stall_debug(stall_debug),
         .flush_debug(flush_debug),
+        .predict_taken_debug(predict_taken_debug),
         .inst_valid_debug(inst_valid_debug),
         .debug_cycle_count(debug_cycle_count),
         .debug_instret_count(debug_instret_count),

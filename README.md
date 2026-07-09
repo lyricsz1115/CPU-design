@@ -22,8 +22,10 @@
 ## 当前模块情况
 
 - `cpu_top.v`：单周期 RV32I 子集 CPU
-- `pipeline_cpu_top.v`：五级流水 CPU 框架
+- `pipeline_cpu_top.v`：五级流水 CPU，支持 forwarding、load-use stall、BTFNT 静态分支预测和 flush
 - `minisys_top.v`：`Minisys` 板级顶层
+- `editable_minisys_top.v`：可通过开关/按键装载指令的板级顶层
+- `instr_loader.v`：将 4 次 8-bit 开关输入组装成 1 条 32-bit 指令并写入 `imem`
 
 ## 当前支持的指令
 
@@ -117,13 +119,15 @@ PASS: single-cycle sum dmem[0]=55
 2. 验证 `hazard.mem`
 3. 验证 `load_use.mem`
 4. 验证 `branch.mem`
-5. 仿真稳定后再切换到流水线板级测试
+5. 验证 `branch_predict.mem`
+6. 仿真稳定后再切换到流水线板级测试
 
 ## 交接说明
 
 详细交接信息见：
 
 - [doc/handoff_status.md](doc/handoff_status.md)
+- [doc/advanced_usage.md](doc/advanced_usage.md)
 
 其中记录了：
 
@@ -131,3 +135,61 @@ PASS: single-cycle sum dmem[0]=55
 - 已确认的板级引脚
 - `sum.mem` 的 Vivado 路径注意事项
 - Git 提交流程说明
+
+## 进阶代码入口
+
+进阶要求相关入口：
+
+- `system_top`：单周期 CPU + 内存映射 I/O + 性能计数。
+- `system_minisys_top`：进阶 I/O 上板顶层。
+- `pipeline_minisys_top`：流水线 CPU 上板顶层。
+- `editable_minisys_top`：开关/按键写入指令存储器的可编辑上板顶层。
+- `tb_io_system`：I/O 系统仿真。
+- `tb_perf_counter`：性能计数仿真。
+- `tb_pipeline`：流水线冒险综合测试，覆盖数据前推、load-use 暂停、BTFNT 分支预测和 flush。
+- `tb_editable_loader`：模拟开关/按键逐 byte 写入指令，再运行 CPU。
+
+## 可编辑指令装载模式
+
+`editable_minisys_top` 支持在板子上通过开关和按键写入指令存储器：
+
+```text
+装载模式：CPU 保持复位，开关/按键写 imem
+运行模式：CPU 从 PC=0 开始执行刚写入的程序
+```
+
+输入方式：
+
+```text
+sw[7:0]      当前 8-bit 指令片段
+btn_write    写入当前 byte，4 次组成 1 条 32-bit 指令
+btn_next     跳到下一条指令地址
+btn_clear    回到装载模式并清零装载地址
+btn_run      开始运行 CPU
+```
+
+写入顺序为小端序：
+
+```text
+第 1 次写 inst[7:0]
+第 2 次写 inst[15:8]
+第 3 次写 inst[23:16]
+第 4 次写 inst[31:24]，随后整条指令写入 imem
+```
+
+仿真验证：
+
+```text
+PASS: editable loader wrote instructions through switches/buttons and CPU produced led=0x37
+```
+
+`vivado/editable_minisys_template.xdc` 已按 Minisys 硬件手册映射：
+
+```text
+sw[7:0] = SW7~SW0
+btn_write = S1
+btn_next  = S2
+btn_clear = S3
+btn_run   = S4
+rst_btn   = S6
+```

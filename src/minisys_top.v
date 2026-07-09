@@ -14,6 +14,9 @@ module minisys_top(
     cpu_top #(.INIT_FILE("sum.mem"), .USE_INIT_FILE(0), .PROGRAM_ID(0)) u_cpu(
         .clk(clk),
         .rst(rst_btn),
+        .imem_write_enable(1'b0),
+        .imem_write_addr(32'b0),
+        .imem_write_data(32'b0),
         .external_read_data(32'b0),
         .external_mem_read(external_mem_read),
         .external_mem_write(external_mem_write),

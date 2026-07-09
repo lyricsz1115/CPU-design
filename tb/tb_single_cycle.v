@@ -14,6 +14,9 @@ module tb_single_cycle;
     cpu_top #(.INIT_FILE("sum.mem")) dut(
         .clk(clk),
         .rst(rst),
+        .imem_write_enable(1'b0),
+        .imem_write_addr(32'b0),
+        .imem_write_data(32'b0),
         .external_read_data(32'b0),
         .external_mem_read(external_mem_read),
         .external_mem_write(external_mem_write),

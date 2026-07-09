@@ -5,6 +5,10 @@ module imem #(
     parameter PROGRAM_ID = 0
 )(
     input wire [31:0] addr,
+    input wire clk,
+    input wire write_enable,
+    input wire [31:0] write_addr,
+    input wire [31:0] write_data,
     output wire [31:0] inst
 );
     reg [31:0] mem [0:MEM_WORDS-1];
@@ -68,10 +72,22 @@ module imem #(
                 mem[5] = 32'h00302023;
                 mem[6] = 32'h0000006f;
             end
+            6: begin // branch_predict.mem, backward beq predicted taken, result dmem[0] = 1
+                mem[0] = 32'h00100093;
+                mem[1] = 32'h00100113;
+                mem[2] = 32'h00102023;
+                mem[3] = 32'hfe208ee3;
+            end
         endcase
 
         if (USE_INIT_FILE) begin
             $readmemh(INIT_FILE, mem);
+        end
+    end
+
+    always @(posedge clk) begin
+        if (write_enable) begin
+            mem[write_addr[31:2]] <= write_data;
         end
     end
 

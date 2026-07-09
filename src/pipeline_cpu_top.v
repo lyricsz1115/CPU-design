@@ -7,6 +7,7 @@ module pipeline_cpu_top #(
     input wire rst,
     output wire stall_debug,
     output wire flush_debug,
+    output wire predict_taken_debug,
     output wire inst_valid_debug,
     output wire [31:0] debug_cycle_count,
     output wire [31:0] debug_instret_count,
@@ -20,6 +21,7 @@ module pipeline_cpu_top #(
     wire [31:0] pc_plus4_if = pc_value + 32'd4;
     wire [31:0] inst_if;
     wire [31:0] next_pc;
+    wire [31:0] correct_pc;
 
     wire [31:0] if_id_pc;
     wire [31:0] if_id_inst;
@@ -39,6 +41,9 @@ module pipeline_cpu_top #(
     wire id_alu_a_zero;
     wire id_reg_write;
     wire [31:0] id_imm;
+    wire id_pred_taken;
+    wire id_predict_redirect;
+    wire [31:0] id_pred_target;
     wire [31:0] id_reg_data1;
     wire [31:0] id_reg_data2;
     wire [31:0] id_reg_data1_bypass;
@@ -56,6 +61,8 @@ module pipeline_cpu_top #(
     wire [31:0] ex_reg_data1;
     wire [31:0] ex_reg_data2;
     wire [31:0] ex_imm;
+    wire ex_pred_taken;
+    wire [31:0] ex_pred_target;
     wire [4:0] ex_rs1;
     wire [4:0] ex_rs2;
     wire [4:0] ex_rd;
@@ -70,6 +77,7 @@ module pipeline_cpu_top #(
     wire [31:0] ex_alu_result;
     wire ex_zero;
     wire ex_pc_src;
+    wire ex_mispredict;
     wire [31:0] ex_branch_target = ex_pc + ex_imm;
     wire [31:0] ex_pc_plus4 = ex_pc + 32'd4;
 
@@ -96,6 +104,7 @@ module pipeline_cpu_top #(
     wire pc_write;
     wire if_id_write;
     wire if_id_flush;
+    wire hazard_if_id_flush;
     wire id_ex_flush;
     wire load_use_stall;
     wire inst_valid_wb;
@@ -104,10 +113,26 @@ module pipeline_cpu_top #(
     reg ex_mem_valid;
     reg mem_wb_valid;
 
-    assign next_pc = ex_pc_src ? ex_branch_target : pc_plus4_if;
+    assign id_pred_taken = id_jal | (id_branch & id_imm[31]);
+    assign id_pred_target = if_id_pc + id_imm;
+    assign id_predict_redirect = pc_write & if_id_valid & id_pred_taken;
+
+    assign ex_mispredict = id_ex_valid & (ex_branch | ex_jal) &
+        ((ex_pc_src != ex_pred_taken) |
+        (ex_pc_src & ex_pred_taken & (ex_branch_target != ex_pred_target)));
+    assign correct_pc = ex_pc_src ? ex_branch_target : ex_pc_plus4;
+    assign next_pc = ex_mispredict ? correct_pc :
+                     id_predict_redirect ? id_pred_target : pc_plus4_if;
 
     pc u_pc(.clk(clk), .rst(rst), .en(pc_write), .next_pc(next_pc), .pc(pc_value));
-    imem #(.INIT_FILE(INIT_FILE), .USE_INIT_FILE(USE_INIT_FILE), .PROGRAM_ID(PROGRAM_ID)) u_imem(.addr(pc_value), .inst(inst_if));
+    imem #(.INIT_FILE(INIT_FILE), .USE_INIT_FILE(USE_INIT_FILE), .PROGRAM_ID(PROGRAM_ID)) u_imem(
+        .addr(pc_value),
+        .clk(clk),
+        .write_enable(1'b0),
+        .write_addr(32'b0),
+        .write_data(32'b0),
+        .inst(inst_if)
+    );
 
     if_id_reg u_if_id(
         .clk(clk), .rst(rst), .en(if_id_write), .flush(if_id_flush),
@@ -132,9 +157,10 @@ module pipeline_cpu_top #(
     assign id_reg_data2_bypass = (wb_reg_write && wb_rd != 5'b0 && wb_rd == id_rs2) ? wb_data : id_reg_data2;
 
     hazard_unit u_hazard(
-        .id_ex_mem_read(ex_mem_read), .id_ex_rd(ex_rd), .if_id_rs1(id_rs1), .if_id_rs2(id_rs2), .pc_src(ex_pc_src),
-        .pc_write(pc_write), .if_id_write(if_id_write), .if_id_flush(if_id_flush), .id_ex_flush(id_ex_flush)
+        .id_ex_mem_read(ex_mem_read), .id_ex_rd(ex_rd), .if_id_rs1(id_rs1), .if_id_rs2(id_rs2), .pc_src(ex_mispredict),
+        .pc_write(pc_write), .if_id_write(if_id_write), .if_id_flush(hazard_if_id_flush), .id_ex_flush(id_ex_flush)
     );
+    assign if_id_flush = hazard_if_id_flush | id_predict_redirect;
     assign load_use_stall = ~pc_write;
 
     id_ex_reg u_id_ex(
@@ -142,10 +168,12 @@ module pipeline_cpu_top #(
         .reg_write_in(id_reg_write), .mem_to_reg_in(id_mem_to_reg), .mem_read_in(id_mem_read), .mem_write_in(id_mem_write),
         .branch_in(id_branch), .jal_in(id_jal), .alu_src_in(id_alu_src), .alu_op_in(id_alu_op),
         .pc_in(if_id_pc), .reg_data1_in(id_reg_data1_bypass), .reg_data2_in(id_reg_data2_bypass), .imm_in(id_imm),
+        .pred_taken_in(id_pred_taken), .pred_target_in(id_pred_target),
         .rs1_in(id_rs1), .rs2_in(id_rs2), .rd_in(id_rd), .funct3_in(id_funct3), .funct7_in(id_funct7),
         .reg_write_out(ex_reg_write), .mem_to_reg_out(ex_mem_to_reg), .mem_read_out(ex_mem_read), .mem_write_out(ex_mem_write),
         .branch_out(ex_branch), .jal_out(ex_jal), .alu_src_out(ex_alu_src), .alu_op_out(ex_alu_op),
         .pc_out(ex_pc), .reg_data1_out(ex_reg_data1), .reg_data2_out(ex_reg_data2), .imm_out(ex_imm),
+        .pred_taken_out(ex_pred_taken), .pred_target_out(ex_pred_target),
         .rs1_out(ex_rs1), .rs2_out(ex_rs2), .rd_out(ex_rd), .funct3_out(ex_funct3), .funct7_out(ex_funct7)
     );
 
@@ -217,7 +245,7 @@ module pipeline_cpu_top #(
         .rst(rst),
         .inst_valid(inst_valid_wb),
         .stall(load_use_stall),
-        .flush(ex_pc_src),
+        .flush(ex_mispredict | id_predict_redirect),
         .cycle_count(debug_cycle_count),
         .instret_count(debug_instret_count),
         .stall_count(debug_stall_count),
@@ -225,7 +253,8 @@ module pipeline_cpu_top #(
     );
 
     assign stall_debug = load_use_stall;
-    assign flush_debug = ex_pc_src;
+    assign flush_debug = ex_mispredict | id_predict_redirect;
+    assign predict_taken_debug = id_predict_redirect;
     assign inst_valid_debug = inst_valid_wb;
     assign debug_pc = pc_value;
     assign debug_dmem0 = u_dmem.mem[0];

@@ -14,6 +14,8 @@ module id_ex_reg(
     input wire [31:0] reg_data1_in,
     input wire [31:0] reg_data2_in,
     input wire [31:0] imm_in,
+    input wire pred_taken_in,
+    input wire [31:0] pred_target_in,
     input wire [4:0] rs1_in,
     input wire [4:0] rs2_in,
     input wire [4:0] rd_in,
@@ -31,6 +33,8 @@ module id_ex_reg(
     output reg [31:0] reg_data1_out,
     output reg [31:0] reg_data2_out,
     output reg [31:0] imm_out,
+    output reg pred_taken_out,
+    output reg [31:0] pred_target_out,
     output reg [4:0] rs1_out,
     output reg [4:0] rs2_out,
     output reg [4:0] rd_out,
@@ -51,6 +55,8 @@ module id_ex_reg(
             reg_data1_out <= 32'b0;
             reg_data2_out <= 32'b0;
             imm_out <= 32'b0;
+            pred_taken_out <= 1'b0;
+            pred_target_out <= 32'b0;
             rs1_out <= 5'b0;
             rs2_out <= 5'b0;
             rd_out <= 5'b0;
@@ -69,6 +75,8 @@ module id_ex_reg(
             reg_data1_out <= reg_data1_in;
             reg_data2_out <= reg_data2_in;
             imm_out <= imm_in;
+            pred_taken_out <= pred_taken_in;
+            pred_target_out <= pred_target_in;
             rs1_out <= rs1_in;
             rs2_out <= rs2_in;
             rd_out <= rd_in;

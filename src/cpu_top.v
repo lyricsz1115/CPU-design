@@ -6,6 +6,9 @@ module cpu_top #(
 )(
     input wire clk,
     input wire rst,
+    input wire imem_write_enable,
+    input wire [31:0] imem_write_addr,
+    input wire [31:0] imem_write_data,
     input wire [31:0] external_read_data,
     output wire external_mem_read,
     output wire external_mem_write,
@@ -49,7 +52,14 @@ module cpu_top #(
     wire [31:0] next_pc = pc_src ? branch_target : pc_plus4;
 
     pc u_pc(.clk(clk), .rst(rst), .en(1'b1), .next_pc(next_pc), .pc(pc_value));
-    imem #(.INIT_FILE(INIT_FILE), .USE_INIT_FILE(USE_INIT_FILE), .PROGRAM_ID(PROGRAM_ID)) u_imem(.addr(pc_value), .inst(inst));
+    imem #(.INIT_FILE(INIT_FILE), .USE_INIT_FILE(USE_INIT_FILE), .PROGRAM_ID(PROGRAM_ID)) u_imem(
+        .addr(pc_value),
+        .clk(clk),
+        .write_enable(imem_write_enable),
+        .write_addr(imem_write_addr),
+        .write_data(imem_write_data),
+        .inst(inst)
+    );
     decoder u_decoder(.inst(inst), .opcode(opcode), .rd(rd), .funct3(funct3), .rs1(rs1), .rs2(rs2), .funct7(funct7));
     control u_control(.opcode(opcode), .branch(branch), .jal(jal), .mem_read(mem_read), .mem_to_reg(mem_to_reg), .alu_op(alu_op), .mem_write(mem_write), .alu_src(alu_src), .alu_a_zero(alu_a_zero), .reg_write(reg_write));
     imm_gen u_imm_gen(.inst(inst), .imm(imm));
