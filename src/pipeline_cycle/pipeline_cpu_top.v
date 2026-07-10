@@ -1,10 +1,20 @@
 module pipeline_cpu_top #(
     parameter INIT_FILE = "sum.mem",
     parameter USE_INIT_FILE = 1,
-    parameter PROGRAM_ID = 0
+    parameter PROGRAM_ID = 0,
+    parameter ENABLE_IMEM_WRITE = 0,
+    parameter USE_EXTERNAL_DATA_BUS = 0
 )(
     input wire clk,
     input wire rst,
+    input wire imem_write_enable,
+    input wire [31:0] imem_write_addr,
+    input wire [31:0] imem_write_data,
+    input wire [31:0] external_read_data,
+    output wire external_mem_read,
+    output wire external_mem_write,
+    output wire [31:0] external_addr,
+    output wire [31:0] external_write_data,
     output wire stall_debug,
     output wire flush_debug,
     output wire predict_taken_debug,
@@ -90,6 +100,7 @@ module pipeline_cpu_top #(
     wire [31:0] mem_alu_result;
     wire [31:0] mem_write_data;
     wire [4:0] mem_rd;
+    wire [31:0] internal_mem_read_data;
     wire [31:0] mem_read_data;
 
     wire wb_reg_write;
@@ -128,9 +139,9 @@ module pipeline_cpu_top #(
     imem #(.INIT_FILE(INIT_FILE), .USE_INIT_FILE(USE_INIT_FILE), .PROGRAM_ID(PROGRAM_ID)) u_imem(
         .addr(pc_value),
         .clk(clk),
-        .write_enable(1'b0),
-        .write_addr(32'b0),
-        .write_data(32'b0),
+        .write_enable(ENABLE_IMEM_WRITE ? imem_write_enable : 1'b0),
+        .write_addr(imem_write_addr),
+        .write_data(imem_write_data),
         .inst(inst_if)
     );
 
@@ -218,7 +229,15 @@ module pipeline_cpu_top #(
         end
     end
 
-    dmem u_dmem(.clk(clk), .mem_read(mem_mem_read), .mem_write(mem_mem_write), .addr(mem_alu_result), .write_data(mem_write_data), .read_data(mem_read_data));
+    dmem u_dmem(
+        .clk(clk),
+        .mem_read(mem_mem_read && !USE_EXTERNAL_DATA_BUS),
+        .mem_write(mem_mem_write && !USE_EXTERNAL_DATA_BUS),
+        .addr(mem_alu_result),
+        .write_data(mem_write_data),
+        .read_data(internal_mem_read_data)
+    );
+    assign mem_read_data = USE_EXTERNAL_DATA_BUS ? external_read_data : internal_mem_read_data;
 
     mem_wb_reg u_mem_wb(
         .clk(clk), .rst(rst),
@@ -256,6 +275,10 @@ module pipeline_cpu_top #(
     assign flush_debug = ex_mispredict | id_predict_redirect;
     assign predict_taken_debug = id_predict_redirect;
     assign inst_valid_debug = inst_valid_wb;
+    assign external_mem_read = USE_EXTERNAL_DATA_BUS ? mem_mem_read : 1'b0;
+    assign external_mem_write = USE_EXTERNAL_DATA_BUS ? mem_mem_write : 1'b0;
+    assign external_addr = mem_alu_result;
+    assign external_write_data = mem_write_data;
     assign debug_pc = pc_value;
     assign debug_dmem0 = u_dmem.mem[0];
     assign debug_dmem1 = u_dmem.mem[1];
