@@ -20,6 +20,16 @@ module alu_control(
                     default: alu_ctrl = `ALU_NOP;
                 endcase
             end
+            2'b11: begin
+                case (funct3)
+                    3'b000: alu_ctrl = `ALU_ADD;
+                    3'b111: alu_ctrl = `ALU_AND;
+                    3'b110: alu_ctrl = `ALU_OR;
+                    3'b100: alu_ctrl = `ALU_XOR;
+                    3'b010: alu_ctrl = `ALU_SLT;
+                    default: alu_ctrl = `ALU_NOP;
+                endcase
+            end
             default: alu_ctrl = `ALU_NOP;
         endcase
     end
