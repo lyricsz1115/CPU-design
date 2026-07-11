@@ -96,6 +96,18 @@ module imem #(
                 mem[13] = 32'h00802a23;
                 mem[14] = 32'h0000006f;
             end
+            8: begin // cache_board_demo.mem, mem[0]=0x55, access/hit/miss=6/4/2
+                mem[0] = 32'h05500093;
+                mem[1] = 32'h00102023;
+                mem[2] = 32'h00002103;
+                mem[3] = 32'h00402183;
+                mem[4] = 32'h00002203;
+                mem[5] = 32'h00802283;
+                mem[6] = 32'h00c02303;
+                mem[7] = 32'h100003b7;
+                mem[8] = 32'h0013a023;
+                mem[9] = 32'h0000006f;
+            end
         endcase
 //在仿真中使用$readmemh函数从指定的初始化文件中读取内存内容，并将其加载到内存数组中。
         if (USE_INIT_FILE) begin

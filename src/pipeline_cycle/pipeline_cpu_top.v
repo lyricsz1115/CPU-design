@@ -4,7 +4,10 @@ module pipeline_cpu_top #(
     parameter USE_INIT_FILE = 1,
     parameter PROGRAM_ID = 0,
     parameter ENABLE_IMEM_WRITE = 0,
-    parameter USE_EXTERNAL_DATA_BUS = 0
+    parameter USE_EXTERNAL_DATA_BUS = 0,
+    parameter ENABLE_DATA_CACHE = 0,
+    parameter CACHE_NUM_SETS = 8,
+    parameter CACHE_WORDS_PER_LINE = 4
 )(
     input wire clk,
     input wire rst,
@@ -24,6 +27,9 @@ module pipeline_cpu_top #(
     output wire [31:0] debug_instret_count,
     output wire [31:0] debug_stall_count,
     output wire [31:0] debug_flush_count,
+    output wire [31:0] debug_cache_access_count,
+    output wire [31:0] debug_cache_hit_count,
+    output wire [31:0] debug_cache_miss_count,
     output wire [31:0] debug_pc,
     output wire [31:0] debug_dmem0,
     output wire [31:0] debug_dmem1
@@ -67,6 +73,7 @@ module pipeline_cpu_top #(
     wire ex_branch;
     wire ex_jal;
     wire ex_alu_src;
+    wire ex_alu_a_zero;
     wire [1:0] ex_alu_op;
     wire [31:0] ex_pc;
     wire [31:0] ex_reg_data1;
@@ -84,6 +91,7 @@ module pipeline_cpu_top #(
     wire [1:0] forward_b;
     wire [31:0] forward_a_data;
     wire [31:0] forward_b_data;
+    wire [31:0] ex_alu_a;
     wire [31:0] ex_alu_b;
     wire [31:0] ex_alu_result;
     wire ex_zero;
@@ -95,9 +103,14 @@ module pipeline_cpu_top #(
     wire ex_div_done;
     wire [31:0] ex_div_result;
     reg  div_active;
+    reg  div_result_valid;
+    reg  [31:0] div_result_latched;
     wire div_start;
     wire div_stall;
-    wire ex_en;                   // ID/EX and EX/MEM freeze during multi-cycle division
+    wire front_stall;
+    wire id_ex_en;
+    wire ex_mem_en;
+    wire ex_mem_flush;
     wire [31:0] ex_result;
     wire [31:0] ex_branch_target = ex_pc + ex_imm;
     wire [31:0] ex_pc_plus4 = ex_pc + 32'd4;
@@ -113,6 +126,41 @@ module pipeline_cpu_top #(
     wire [4:0] mem_rd;
     wire [31:0] internal_mem_read_data;
     wire [31:0] mem_read_data;
+    wire mem_access;
+    wire mem_cacheable;
+    wire cached_mem_access;
+    wire cache_stall;
+
+    wire cache_req_valid;
+    wire cache_req_ready;
+    wire cache_resp_valid;
+    wire [31:0] cache_resp_rdata;
+    wire cache_resp_hit;
+    wire cache_busy;
+    reg cache_req_sent;
+
+    wire cache_mem_req_valid;
+    wire cache_mem_req_ready;
+    wire cache_mem_req_write;
+    wire [31:0] cache_mem_req_addr;
+    wire [31:0] cache_mem_req_wdata;
+    wire cache_mem_resp_valid;
+    wire [31:0] cache_mem_resp_rdata;
+
+    wire backend_mem_read;
+    wire backend_mem_write;
+    wire [31:0] backend_addr;
+    wire [31:0] backend_write_data;
+    wire [31:0] backend_read_data;
+    wire direct_mem_read;
+    wire direct_mem_write;
+    wire storage_mem_read;
+    wire storage_mem_write;
+    wire [31:0] storage_addr;
+    wire [31:0] storage_write_data;
+    wire [31:0] cache_access_count;
+    wire [31:0] cache_hit_count;
+    wire [31:0] cache_miss_count;
 
     wire wb_reg_write;
     wire wb_mem_to_reg;
@@ -122,6 +170,7 @@ module pipeline_cpu_top #(
     wire [31:0] wb_alu_result;
     wire [4:0] wb_rd;
     wire [31:0] wb_data;
+    wire wb_commit_write;
 
     wire pc_write;
     wire if_id_write;
@@ -148,18 +197,33 @@ module pipeline_cpu_top #(
 
     // --- multi-cycle division control ---
     assign ex_is_div   = id_ex_valid && (ex_alu_ctrl == `ALU_DIV);
-    assign div_start   = ex_is_div && !div_active;
-    assign div_stall   = div_active && !ex_div_done;
-    assign ex_en       = ~div_stall;   // freeze ID/EX and EX/MEM during division
-    assign ex_result   = div_active ? ex_div_result : ex_alu_result;
+    assign div_start   = ex_is_div && !div_active && !div_result_valid && !ex_div_done;
+    assign div_stall   = ex_is_div && !div_result_valid && !ex_div_done;
+    assign front_stall = div_stall | cache_stall;
+    assign id_ex_en    = ~front_stall;
+    assign ex_mem_en   = ~cache_stall;
+    assign ex_mem_flush = div_stall;
+    assign ex_result   = ex_is_div ?
+                         (div_result_valid ? div_result_latched : ex_div_result) :
+                         ex_alu_result;
 
     always @(posedge clk or posedge rst) begin
         if (rst) begin
             div_active <= 1'b0;
-        end else if (div_start) begin
-            div_active <= 1'b1;
-        end else if (ex_div_done) begin
-            div_active <= 1'b0;
+            div_result_valid <= 1'b0;
+            div_result_latched <= 32'b0;
+        end else begin
+            if (div_start) begin
+                div_active <= 1'b1;
+            end
+            if (ex_div_done) begin
+                div_active <= 1'b0;
+                div_result_valid <= 1'b1;
+                div_result_latched <= ex_div_result;
+            end
+            if (ex_is_div && !front_stall && (div_result_valid || ex_div_done)) begin
+                div_result_valid <= 1'b0;
+            end
         end
     end
 
@@ -191,27 +255,28 @@ module pipeline_cpu_top #(
     decoder u_decoder(.inst(if_id_inst), .opcode(id_opcode), .rd(id_rd), .funct3(id_funct3), .rs1(id_rs1), .rs2(id_rs2), .funct7(id_funct7));
     control u_control(.opcode(id_opcode), .branch(id_branch), .jal(id_jal), .mem_read(id_mem_read), .mem_to_reg(id_mem_to_reg), .alu_op(id_alu_op), .mem_write(id_mem_write), .alu_src(id_alu_src), .alu_a_zero(id_alu_a_zero), .reg_write(id_reg_write));
     imm_gen u_imm_gen(.inst(if_id_inst), .imm(id_imm));
-    regfile u_regfile(.clk(clk), .rst(rst), .reg_write(wb_reg_write), .rs1(id_rs1), .rs2(id_rs2), .rd(wb_rd), .write_data(wb_data), .read_data1(id_reg_data1), .read_data2(id_reg_data2));
-    assign id_reg_data1_bypass = (wb_reg_write && wb_rd != 5'b0 && wb_rd == id_rs1) ? wb_data : id_reg_data1;
-    assign id_reg_data2_bypass = (wb_reg_write && wb_rd != 5'b0 && wb_rd == id_rs2) ? wb_data : id_reg_data2;
+    assign wb_commit_write = wb_reg_write && mem_wb_valid;
+    regfile u_regfile(.clk(clk), .rst(rst), .reg_write(wb_commit_write), .rs1(id_rs1), .rs2(id_rs2), .rd(wb_rd), .write_data(wb_data), .read_data1(id_reg_data1), .read_data2(id_reg_data2));
+    assign id_reg_data1_bypass = (wb_commit_write && wb_rd != 5'b0 && wb_rd == id_rs1) ? wb_data : id_reg_data1;
+    assign id_reg_data2_bypass = (wb_commit_write && wb_rd != 5'b0 && wb_rd == id_rs2) ? wb_data : id_reg_data2;
 
     hazard_unit u_hazard(
         .id_ex_mem_read(ex_mem_read), .id_ex_rd(ex_rd), .if_id_rs1(id_rs1), .if_id_rs2(id_rs2),
-        .pc_src(ex_mispredict), .ex_stall(div_stall),
+        .pc_src(ex_mispredict), .ex_stall(front_stall),
         .pc_write(pc_write), .if_id_write(if_id_write), .if_id_flush(hazard_if_id_flush), .id_ex_flush(id_ex_flush)
     );
     assign if_id_flush = hazard_if_id_flush | id_predict_redirect;
-    assign load_use_stall = ~pc_write;
+    assign load_use_stall = ~pc_write && !front_stall;
 
     id_ex_reg u_id_ex(
-        .clk(clk), .rst(rst), .en(ex_en), .flush(id_ex_flush),
+        .clk(clk), .rst(rst), .en(id_ex_en), .flush(id_ex_flush),
         .reg_write_in(id_reg_write), .mem_to_reg_in(id_mem_to_reg), .mem_read_in(id_mem_read), .mem_write_in(id_mem_write),
-        .branch_in(id_branch), .jal_in(id_jal), .alu_src_in(id_alu_src), .alu_op_in(id_alu_op),
+        .branch_in(id_branch), .jal_in(id_jal), .alu_src_in(id_alu_src), .alu_a_zero_in(id_alu_a_zero), .alu_op_in(id_alu_op),
         .pc_in(if_id_pc), .reg_data1_in(id_reg_data1_bypass), .reg_data2_in(id_reg_data2_bypass), .imm_in(id_imm),
         .pred_taken_in(id_pred_taken), .pred_target_in(id_pred_target),
         .rs1_in(id_rs1), .rs2_in(id_rs2), .rd_in(id_rd), .funct3_in(id_funct3), .funct7_in(id_funct7),
         .reg_write_out(ex_reg_write), .mem_to_reg_out(ex_mem_to_reg), .mem_read_out(ex_mem_read), .mem_write_out(ex_mem_write),
-        .branch_out(ex_branch), .jal_out(ex_jal), .alu_src_out(ex_alu_src), .alu_op_out(ex_alu_op),
+        .branch_out(ex_branch), .jal_out(ex_jal), .alu_src_out(ex_alu_src), .alu_a_zero_out(ex_alu_a_zero), .alu_op_out(ex_alu_op),
         .pc_out(ex_pc), .reg_data1_out(ex_reg_data1), .reg_data2_out(ex_reg_data2), .imm_out(ex_imm),
         .pred_taken_out(ex_pred_taken), .pred_target_out(ex_pred_target),
         .rs1_out(ex_rs1), .rs2_out(ex_rs2), .rd_out(ex_rd), .funct3_out(ex_funct3), .funct7_out(ex_funct7)
@@ -222,13 +287,13 @@ module pipeline_cpu_top #(
             id_ex_valid <= 1'b0;
         end else if (id_ex_flush) begin
             id_ex_valid <= 1'b0;
-        end else begin
+        end else if (id_ex_en) begin
             id_ex_valid <= if_id_valid;
         end
     end
 
     forwarding_unit u_forwarding(
-        .ex_mem_reg_write(mem_reg_write), .ex_mem_rd(mem_rd), .mem_wb_reg_write(wb_reg_write), .mem_wb_rd(wb_rd),
+        .ex_mem_reg_write(mem_reg_write && ex_mem_valid), .ex_mem_rd(mem_rd), .mem_wb_reg_write(wb_commit_write), .mem_wb_rd(wb_rd),
         .id_ex_rs1(ex_rs1), .id_ex_rs2(ex_rs2), .forward_a(forward_a), .forward_b(forward_b)
     );
 
@@ -238,8 +303,9 @@ module pipeline_cpu_top #(
                             (forward_b == 2'b01) ? wb_data : ex_reg_data2;
 
     alu_control u_alu_control(.alu_op(ex_alu_op), .funct3(ex_funct3), .funct7(ex_funct7), .alu_ctrl(ex_alu_ctrl));
+    assign ex_alu_a = ex_alu_a_zero ? 32'b0 : forward_a_data;
     assign ex_alu_b = ex_alu_src ? ex_imm : forward_b_data;
-    alu u_alu(.a(forward_a_data), .b(ex_alu_b), .alu_ctrl(ex_alu_ctrl),
+    alu u_alu(.a(ex_alu_a), .b(ex_alu_b), .alu_ctrl(ex_alu_ctrl),
               .y(ex_alu_result), .zero(ex_zero),
               .less_than(ex_less_than), .less_than_unsigned(ex_less_than_unsigned));
     branch_unit u_branch_unit(.branch(ex_branch), .jal(ex_jal), .zero(ex_zero),
@@ -249,13 +315,13 @@ module pipeline_cpu_top #(
     div_unit u_div_unit(
         .clk(clk), .rst(rst),
         .start(div_start),
-        .dividend(forward_a_data), .divisor(ex_alu_b),
+        .dividend(ex_alu_a), .divisor(ex_alu_b),
         .funct3(ex_funct3),
         .result(ex_div_result), .done(ex_div_done)
     );
 
     ex_mem_reg u_ex_mem(
-        .clk(clk), .rst(rst), .en(ex_en),
+        .clk(clk), .rst(rst), .en(ex_mem_en), .flush(ex_mem_flush),
         .reg_write_in(ex_reg_write), .mem_to_reg_in(ex_mem_to_reg), .mem_read_in(ex_mem_read), .mem_write_in(ex_mem_write),
         .jal_in(ex_jal), .pc_plus4_in(ex_pc_plus4), .alu_result_in(ex_result), .write_data_in(forward_b_data), .rd_in(ex_rd),
         .reg_write_out(mem_reg_write), .mem_to_reg_out(mem_mem_to_reg), .mem_read_out(mem_mem_read), .mem_write_out(mem_mem_write),
@@ -265,23 +331,107 @@ module pipeline_cpu_top #(
     always @(posedge clk or posedge rst) begin
         if (rst) begin
             ex_mem_valid <= 1'b0;
+        end else if (cache_stall) begin
+            ex_mem_valid <= ex_mem_valid;
+        end else if (div_stall) begin
+            ex_mem_valid <= 1'b0;
         end else begin
             ex_mem_valid <= id_ex_valid;
         end
     end
 
+    assign mem_access = ex_mem_valid && (mem_mem_read || mem_mem_write);
+    assign mem_cacheable = (mem_alu_result[31:10] == 22'b0);
+    assign cached_mem_access = ENABLE_DATA_CACHE && mem_access && mem_cacheable;
+    assign cache_req_valid = cached_mem_access && !cache_req_sent;
+    assign cache_stall = cached_mem_access && !cache_resp_valid;
+
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin
+            cache_req_sent <= 1'b0;
+        end else if (!cached_mem_access || cache_resp_valid) begin
+            cache_req_sent <= 1'b0;
+        end else if (cache_req_valid && cache_req_ready) begin
+            cache_req_sent <= 1'b1;
+        end
+    end
+
+    data_cache #(
+        .ADDR_WIDTH(32),
+        .DATA_WIDTH(32),
+        .NUM_SETS(CACHE_NUM_SETS),
+        .WORDS_PER_LINE(CACHE_WORDS_PER_LINE)
+    ) u_data_cache (
+        .clk(clk),
+        .rst(rst),
+        .req_valid(cache_req_valid),
+        .req_ready(cache_req_ready),
+        .req_write(mem_mem_write),
+        .req_addr(mem_alu_result),
+        .req_wdata(mem_write_data),
+        .resp_valid(cache_resp_valid),
+        .resp_rdata(cache_resp_rdata),
+        .resp_hit(cache_resp_hit),
+        .busy(cache_busy),
+        .mem_req_valid(cache_mem_req_valid),
+        .mem_req_ready(cache_mem_req_ready),
+        .mem_req_write(cache_mem_req_write),
+        .mem_req_addr(cache_mem_req_addr),
+        .mem_req_wdata(cache_mem_req_wdata),
+        .mem_resp_valid(cache_mem_resp_valid),
+        .mem_resp_rdata(cache_mem_resp_rdata),
+        .access_count(cache_access_count),
+        .hit_count(cache_hit_count),
+        .miss_count(cache_miss_count)
+    );
+
+    cache_memory_adapter u_cache_memory_adapter (
+        .clk(clk),
+        .rst(rst),
+        .req_valid(cache_mem_req_valid),
+        .req_ready(cache_mem_req_ready),
+        .req_write(cache_mem_req_write),
+        .req_addr(cache_mem_req_addr),
+        .req_wdata(cache_mem_req_wdata),
+        .resp_valid(cache_mem_resp_valid),
+        .resp_rdata(cache_mem_resp_rdata),
+        .backend_mem_read(backend_mem_read),
+        .backend_mem_write(backend_mem_write),
+        .backend_addr(backend_addr),
+        .backend_write_data(backend_write_data),
+        .backend_read_data(backend_read_data)
+    );
+
+    assign direct_mem_read = mem_access && mem_mem_read &&
+        (!ENABLE_DATA_CACHE || !mem_cacheable);
+    assign direct_mem_write = mem_access && mem_mem_write &&
+        (!ENABLE_DATA_CACHE || !mem_cacheable);
+
+    assign storage_mem_read = ENABLE_DATA_CACHE ?
+        (backend_mem_read || direct_mem_read) : direct_mem_read;
+    assign storage_mem_write = ENABLE_DATA_CACHE ?
+        (backend_mem_write || direct_mem_write) : direct_mem_write;
+    assign storage_addr = (ENABLE_DATA_CACHE &&
+        (backend_mem_read || backend_mem_write)) ? backend_addr : mem_alu_result;
+    assign storage_write_data = (ENABLE_DATA_CACHE && backend_mem_write) ?
+        backend_write_data : mem_write_data;
+
     dmem u_dmem(
         .clk(clk),
-        .mem_read(mem_mem_read && !USE_EXTERNAL_DATA_BUS),
-        .mem_write(mem_mem_write && !USE_EXTERNAL_DATA_BUS),
-        .addr(mem_alu_result),
-        .write_data(mem_write_data),
+        .mem_read(storage_mem_read && !USE_EXTERNAL_DATA_BUS),
+        .mem_write(storage_mem_write && !USE_EXTERNAL_DATA_BUS),
+        .addr(storage_addr),
+        .write_data(storage_write_data),
         .read_data(internal_mem_read_data)
     );
-    assign mem_read_data = USE_EXTERNAL_DATA_BUS ? external_read_data : internal_mem_read_data;
+
+    assign backend_read_data = USE_EXTERNAL_DATA_BUS ?
+        external_read_data : internal_mem_read_data;
+    assign mem_read_data = cached_mem_access ? cache_resp_rdata :
+        (USE_EXTERNAL_DATA_BUS ? external_read_data : internal_mem_read_data);
 
     mem_wb_reg u_mem_wb(
-        .clk(clk), .rst(rst),
+        .clk(clk), .rst(rst), .en(1'b1), .flush(cache_stall),
         .reg_write_in(mem_reg_write), .mem_to_reg_in(mem_mem_to_reg), .jal_in(mem_jal),
         .pc_plus4_in(mem_pc_plus4), .mem_data_in(mem_read_data), .alu_result_in(mem_alu_result), .rd_in(mem_rd),
         .reg_write_out(wb_reg_write), .mem_to_reg_out(wb_mem_to_reg), .jal_out(wb_jal),
@@ -290,6 +440,8 @@ module pipeline_cpu_top #(
 
     always @(posedge clk or posedge rst) begin
         if (rst) begin
+            mem_wb_valid <= 1'b0;
+        end else if (cache_stall) begin
             mem_wb_valid <= 1'b0;
         end else begin
             mem_wb_valid <= ex_mem_valid;
@@ -304,7 +456,7 @@ module pipeline_cpu_top #(
         .clk(clk),
         .rst(rst),
         .inst_valid(inst_valid_wb),
-        .stall(load_use_stall | div_stall),
+        .stall(load_use_stall | div_stall | cache_stall),
         .flush(ex_mispredict | id_predict_redirect),
         .cycle_count(debug_cycle_count),
         .instret_count(debug_instret_count),
@@ -312,14 +464,17 @@ module pipeline_cpu_top #(
         .flush_count(debug_flush_count)
     );
 
-    assign stall_debug = load_use_stall | div_stall;
+    assign stall_debug = load_use_stall | div_stall | cache_stall;
     assign flush_debug = ex_mispredict | id_predict_redirect;
     assign predict_taken_debug = id_predict_redirect;
     assign inst_valid_debug = inst_valid_wb;
-    assign external_mem_read = USE_EXTERNAL_DATA_BUS ? mem_mem_read : 1'b0;
-    assign external_mem_write = USE_EXTERNAL_DATA_BUS ? mem_mem_write : 1'b0;
-    assign external_addr = mem_alu_result;
-    assign external_write_data = mem_write_data;
+    assign external_mem_read = USE_EXTERNAL_DATA_BUS ? storage_mem_read : 1'b0;
+    assign external_mem_write = USE_EXTERNAL_DATA_BUS ? storage_mem_write : 1'b0;
+    assign external_addr = storage_addr;
+    assign external_write_data = storage_write_data;
+    assign debug_cache_access_count = ENABLE_DATA_CACHE ? cache_access_count : 32'b0;
+    assign debug_cache_hit_count = ENABLE_DATA_CACHE ? cache_hit_count : 32'b0;
+    assign debug_cache_miss_count = ENABLE_DATA_CACHE ? cache_miss_count : 32'b0;
     assign debug_pc = pc_value;
     assign debug_dmem0 = u_dmem.mem[0];
     assign debug_dmem1 = u_dmem.mem[1];
