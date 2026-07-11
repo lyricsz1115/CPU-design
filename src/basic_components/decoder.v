@@ -14,3 +14,16 @@ module decoder(
     assign rs2 = inst[24:20];
     assign funct7 = inst[31:25];
 endmodule
+/*
+31      25 24    20 19    15 14    12 11       7 6         0
+┌─────────┬────────┬────────┬────────┬──────────┬──────────┐
+│ funct7  │  rs2   │  rs1   │ funct3 │    rd    │  opcode  │
+│  7-bit  │ 5-bit  │ 5-bit  │ 3-bit  │  5-bit   │  7-bit   │
+└─────────┴────────┴────────┴────────┴──────────┴──────────┘
+  inst[31:25] = funct7
+  inst[24:20] = rs2
+  inst[19:15] = rs1
+  inst[14:12] = funct3
+  inst[11:7] = rd
+  inst[6:0] = opcode
+*/

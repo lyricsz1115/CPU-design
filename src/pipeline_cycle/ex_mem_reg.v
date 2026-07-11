@@ -1,6 +1,7 @@
 module ex_mem_reg(
     input wire clk,
     input wire rst,
+    input wire en,
     input wire reg_write_in,
     input wire mem_to_reg_in,
     input wire mem_read_in,
@@ -31,7 +32,7 @@ module ex_mem_reg(
             alu_result_out <= 32'b0;
             write_data_out <= 32'b0;
             rd_out <= 5'b0;
-        end else begin
+        end else if (en) begin
             reg_write_out <= reg_write_in;
             mem_to_reg_out <= mem_to_reg_in;
             mem_read_out <= mem_read_in;

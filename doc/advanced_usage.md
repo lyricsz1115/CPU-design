@@ -35,6 +35,94 @@
 | `0x10000018` | `stall_count` |
 | `0x1000001c` | `flush_count` |
 
+### 地址空间架构
+
+地址译码由 `io_bus.v` 完成，判断标准为 `addr[31:10]` 的值：
+
+| 地址范围 | 条件 | 映射到 |
+| --- | --- | --- |
+| `0x00000000` ~ `0x000003FF` | `addr[31:10] == 22'b0` | 普通数据存储器 (DMEM)，256×32bit |
+| `0x10000000` ~ `0x1000001c` | `addr[31:10] != 22'b0` | I/O 寄存器空间，按具体地址译码 |
+
+```text
+cpu_top 的访存请求 (lw/sw)  ──→  io_bus 地址译码
+                                    │
+                     addr[31:10]==0 ?  ──是──→ DMEM (data_mem_selected)
+                         │
+                        否
+                         │
+                         ▼
+                    case (addr)
+                      0x10000000 → LED 输出寄存器
+                      0x10000004 → SW  输入寄存器
+                      0x10000010 → cycle_count
+                      0x10000014 → instret_count
+                      0x10000018 → stall_count
+                      0x1000001c → flush_count
+                      default    → 0
+```
+
+### 性能计数器详细说明
+
+性能计数器由 `perf_counter.v` 模块实现，在硬件层面持续统计四个指标。它们被映射到 I/O 地址空间，CPU 可以通过 `lw` 指令在程序中直接读取当前计数值，实现对自身性能的自省。
+
+| 地址 | 寄存器 | 读出的含义 | 计数条件 |
+| --- | --- | --- | --- |
+| `0x10000010` | `cycle_count` | 从复位释放到现在经历的有效时钟周期数 | 每个时钟周期 +1（rst=0 时） |
+| `0x10000014` | `instret_count` | 已提交（退休）的指令总数 | WB 阶段 `inst_valid` 有效时 +1 |
+| `0x10000018` | `stall_count` | 流水线因 load-use 冒险暂停的次数 | `stall` 信号有效时 +1 |
+| `0x1000001c` | `flush_count` | 流水线因预测错误/重定向清空的次数 | `flush` 信号有效时 +1 |
+
+> **单周期 vs 流水线的区别**：
+> - 单周期 CPU（`system_top`）中：`inst_valid` 每周期固定为 1，stall 和 flush 恒为 0。
+> - 流水线 CPU（`pipeline_cpu_top`）中：`inst_valid` 仅在 WB 阶段指令有效提交时置 1，stall 来自 load-use 暂停，flush 来自 `ex_mispredict | id_predict_redirect`。
+
+### 在程序中读取性能计数器
+
+CPU 可以通过普通的 `lw` 指令读取这些寄存器，实现在测试程序中对自身性能的测量。
+
+**示例：测量一段代码消耗的周期数**
+
+```asm
+# 在被测代码之前读取 cycle_count
+lw x10, 0x10000010(x0)    # x10 = 起始周期数
+
+# ... 被测代码段 ...
+
+# 在被测代码之后读取 cycle_count
+lw x11, 0x10000010(x0)    # x11 = 结束周期数
+sub x12, x11, x10          # x12 = 被测代码消耗的周期数
+```
+
+**示例：读取所有性能计数器并存入 DMEM**
+
+```asm
+lw x10, 0x10000010(x0)     # cycle_count
+lw x11, 0x10000014(x0)     # instret_count
+lw x12, 0x10000018(x0)     # stall_count
+lw x13, 0x1000001c(x0)     # flush_count
+sw x10, 0(x0)              # 保存到 dmem[0]
+sw x11, 4(x0)              # 保存到 dmem[1]
+sw x12, 8(x0)              # 保存到 dmem[2]
+sw x13, 12(x0)             # 保存到 dmem[3]
+```
+
+**计算 CPI（每指令周期数）**：
+
+```text
+CPI = cycle_count / instret_count
+```
+
+仿真中 `tb_pipeline` 的 PERF 输出行就是通过 `debug_*` 端口读取这些计数器得到的：
+
+```text
+PERF pipeline_nop: cycle=79 instret=41 stall=0 flush=36
+PERF load_use:     cycle=79 instret=40 stall=1 flush=36
+PERF branch:       cycle=79 instret=39 stall=0 flush=37
+```
+
+其中 `load_use` 的 `stall=1` 证明了暂停机制触发了一次，`branch` 的 `flush=37` 说明分支预测错误导致了 37 次流水线清空。
+
 ## Vivado 仿真建议
 
 建议按下面顺序跑：

@@ -33,6 +33,15 @@ work/
 # Course/private materials
 *.pdf
 
+# Personal study notes (not part of project deliverables)
+LEARNING_GUIDE.md
+PROJECT_GUIDE.md
+doc/manual_io_test_cases.md
+doc/vivado_project_update_guide.md
+doc/v2.1.0_update_notes.md
+doc/packaging_guide.md
+create_pipeline_cpu_project.tcl
+
 # OS/editor files
 Thumbs.db
 Desktop.ini

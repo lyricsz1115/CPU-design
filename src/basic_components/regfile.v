@@ -11,7 +11,7 @@ module regfile(
 );
     reg [31:0] regs [0:31];
     integer i;
-
+//write,in RISC_V, x0 is always zero, don't write to it.
     always @(posedge clk or posedge rst) begin
         if (rst) begin
             for (i = 0; i < 32; i = i + 1) begin
@@ -21,7 +21,7 @@ module regfile(
             regs[rd] <= write_data;
         end
     end
-
+//read1,read2
     assign read_data1 = (rs1 == 5'b0) ? 32'b0 : regs[rs1];
     assign read_data2 = (rs2 == 5'b0) ? 32'b0 : regs[rs2];
 endmodule

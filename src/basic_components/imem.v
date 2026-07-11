@@ -17,6 +17,7 @@ module imem #(
     initial begin
         for (i = 0; i < MEM_WORDS; i = i + 1) begin
             mem[i] = 32'h00000013;
+            //imm[11:0]   rs1  f3  rd   ITYPE
         end
 
         case (PROGRAM_ID)
@@ -78,13 +79,30 @@ module imem #(
                 mem[2] = 32'h00102023;
                 mem[3] = 32'hfe208ee3;
             end
+            7: begin // mul_div.mem, dmem[0]=60 dmem[1]=6 dmem[2]=2 dmem[3]=20 dmem[4]=48 dmem[5]=56
+                mem[0]  = 32'h01400093;
+                mem[1]  = 32'h00300113;
+                mem[2]  = 32'h022081b3;
+                mem[3]  = 32'h0220c233;
+                mem[4]  = 32'h0220e2b3;
+                mem[5]  = 32'h0ff0f313;
+                mem[6]  = 32'h00411393;
+                mem[7]  = 32'h0083e413;
+                mem[8]  = 32'h00302023;
+                mem[9]  = 32'h00402223;
+                mem[10] = 32'h00502423;
+                mem[11] = 32'h00602623;
+                mem[12] = 32'h00702823;
+                mem[13] = 32'h00802a23;
+                mem[14] = 32'h0000006f;
+            end
         endcase
-
+//在仿真中使用$readmemh函数从指定的初始化文件中读取内存内容，并将其加载到内存数组中。
         if (USE_INIT_FILE) begin
             $readmemh(INIT_FILE, mem);
         end
     end
-
+//
     always @(posedge clk) begin
         if (write_enable) begin
             mem[write_addr[31:2]] <= write_data;

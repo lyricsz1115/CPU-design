@@ -1,6 +1,7 @@
 module id_ex_reg(
     input wire clk,
     input wire rst,
+    input wire en,
     input wire flush,
     input wire reg_write_in,
     input wire mem_to_reg_in,
@@ -62,7 +63,7 @@ module id_ex_reg(
             rd_out <= 5'b0;
             funct3_out <= 3'b0;
             funct7_out <= 7'b0;
-        end else begin
+        end else if (en) begin
             reg_write_out <= reg_write_in;
             mem_to_reg_out <= mem_to_reg_in;
             mem_read_out <= mem_read_in;

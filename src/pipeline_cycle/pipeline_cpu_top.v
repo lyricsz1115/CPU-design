@@ -97,6 +97,7 @@ module pipeline_cpu_top #(
     reg  div_active;
     wire div_start;
     wire div_stall;
+    wire ex_en;                   // ID/EX and EX/MEM freeze during multi-cycle division
     wire [31:0] ex_result;
     wire [31:0] ex_branch_target = ex_pc + ex_imm;
     wire [31:0] ex_pc_plus4 = ex_pc + 32'd4;
@@ -149,6 +150,7 @@ module pipeline_cpu_top #(
     assign ex_is_div   = id_ex_valid && (ex_alu_ctrl == `ALU_DIV);
     assign div_start   = ex_is_div && !div_active;
     assign div_stall   = div_active && !ex_div_done;
+    assign ex_en       = ~div_stall;   // freeze ID/EX and EX/MEM during division
     assign ex_result   = div_active ? ex_div_result : ex_alu_result;
 
     always @(posedge clk or posedge rst) begin
@@ -202,7 +204,7 @@ module pipeline_cpu_top #(
     assign load_use_stall = ~pc_write;
 
     id_ex_reg u_id_ex(
-        .clk(clk), .rst(rst), .flush(id_ex_flush),
+        .clk(clk), .rst(rst), .en(ex_en), .flush(id_ex_flush),
         .reg_write_in(id_reg_write), .mem_to_reg_in(id_mem_to_reg), .mem_read_in(id_mem_read), .mem_write_in(id_mem_write),
         .branch_in(id_branch), .jal_in(id_jal), .alu_src_in(id_alu_src), .alu_op_in(id_alu_op),
         .pc_in(if_id_pc), .reg_data1_in(id_reg_data1_bypass), .reg_data2_in(id_reg_data2_bypass), .imm_in(id_imm),
@@ -253,7 +255,7 @@ module pipeline_cpu_top #(
     );
 
     ex_mem_reg u_ex_mem(
-        .clk(clk), .rst(rst),
+        .clk(clk), .rst(rst), .en(ex_en),
         .reg_write_in(ex_reg_write), .mem_to_reg_in(ex_mem_to_reg), .mem_read_in(ex_mem_read), .mem_write_in(ex_mem_write),
         .jal_in(ex_jal), .pc_plus4_in(ex_pc_plus4), .alu_result_in(ex_result), .write_data_in(forward_b_data), .rd_in(ex_rd),
         .reg_write_out(mem_reg_write), .mem_to_reg_out(mem_mem_to_reg), .mem_read_out(mem_mem_read), .mem_write_out(mem_mem_write),

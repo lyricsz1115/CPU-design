@@ -18,5 +18,5 @@ module hazard_unit(
     assign pc_write    = ~load_use && ~ex_stall;
     assign if_id_write = ~load_use && ~ex_stall;
     assign if_id_flush = pc_src;
-    assign id_ex_flush = load_use | pc_src;
+    assign id_ex_flush = (load_use | pc_src) & ~ex_stall;
 endmodule
