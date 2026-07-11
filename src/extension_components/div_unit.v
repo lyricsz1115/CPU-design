@@ -16,6 +16,7 @@ module div_unit(
     localparam IDLE  = 2'b00;
     localparam CALC  = 2'b01;
     localparam DONE_S = 2'b10;
+    localparam SPECIAL_DONE = 2'b11;
 
     reg [1:0]  state;
     reg [5:0]  iter;      // 0..31
@@ -46,13 +47,13 @@ module div_unit(
                         if (divisor == 32'd0) begin
                             result <= (funct3[1]) ? dividend   // REM/REMU: rd=dividend
                                                    : 32'hffffffff; // DIV/DIVU: rd=-1
-                            state <= DONE_S;
+                            state <= SPECIAL_DONE;
                         end
                         // signed overflow: -2^31 / -1
                         else if (funct3 == 3'b100 && dividend == 32'h80000000 && divisor == 32'hffffffff) begin
                             result <= (funct3[1]) ? 32'd0             // REM
                                                    : 32'h80000000;    // DIV
-                            state <= DONE_S;
+                            state <= SPECIAL_DONE;
                         end
                         // --- normal path ---
                         else if (funct3 == 3'b100) begin          // DIV (signed)
@@ -107,10 +108,12 @@ module div_unit(
                         3'b111: result <= R;                                   // REMU
                         default: result <= Q;
                     endcase
-                    if (!start) begin
-                        state <= IDLE;
-                        done  <= 1'b0;
-                    end
+                    state <= IDLE;
+                end
+
+                SPECIAL_DONE: begin
+                    done <= 1'b1;
+                    state <= IDLE;
                 end
 
                 default: state <= IDLE;

@@ -1,6 +1,8 @@
 module mem_wb_reg(
     input wire clk,
     input wire rst,
+    input wire en,
+    input wire flush,
     input wire reg_write_in,
     input wire mem_to_reg_in,
     input wire jal_in,
@@ -25,14 +27,24 @@ module mem_wb_reg(
             mem_data_out <= 32'b0;
             alu_result_out <= 32'b0;
             rd_out <= 5'b0;
-        end else begin
-            reg_write_out <= reg_write_in;
-            mem_to_reg_out <= mem_to_reg_in;
-            jal_out <= jal_in;
-            pc_plus4_out <= pc_plus4_in;
-            mem_data_out <= mem_data_in;
-            alu_result_out <= alu_result_in;
-            rd_out <= rd_in;
+        end else if (en) begin
+            if (flush) begin
+                reg_write_out <= 1'b0;
+                mem_to_reg_out <= 1'b0;
+                jal_out <= 1'b0;
+                pc_plus4_out <= 32'b0;
+                mem_data_out <= 32'b0;
+                alu_result_out <= 32'b0;
+                rd_out <= 5'b0;
+            end else begin
+                reg_write_out <= reg_write_in;
+                mem_to_reg_out <= mem_to_reg_in;
+                jal_out <= jal_in;
+                pc_plus4_out <= pc_plus4_in;
+                mem_data_out <= mem_data_in;
+                alu_result_out <= alu_result_in;
+                rd_out <= rd_in;
+            end
         end
     end
 endmodule
