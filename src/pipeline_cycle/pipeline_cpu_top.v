@@ -1,3 +1,4 @@
+`include "riscv_defs.vh"
 module pipeline_cpu_top #(
     parameter INIT_FILE = "sum.mem",
     parameter USE_INIT_FILE = 1,
@@ -86,8 +87,17 @@ module pipeline_cpu_top #(
     wire [31:0] ex_alu_b;
     wire [31:0] ex_alu_result;
     wire ex_zero;
+    wire ex_less_than;
+    wire ex_less_than_unsigned;
     wire ex_pc_src;
     wire ex_mispredict;
+    wire ex_is_div;
+    wire ex_div_done;
+    wire [31:0] ex_div_result;
+    reg  div_active;
+    wire div_start;
+    wire div_stall;
+    wire [31:0] ex_result;
     wire [31:0] ex_branch_target = ex_pc + ex_imm;
     wire [31:0] ex_pc_plus4 = ex_pc + 32'd4;
 
@@ -135,6 +145,22 @@ module pipeline_cpu_top #(
     assign next_pc = ex_mispredict ? correct_pc :
                      id_predict_redirect ? id_pred_target : pc_plus4_if;
 
+    // --- multi-cycle division control ---
+    assign ex_is_div   = id_ex_valid && (ex_alu_ctrl == `ALU_DIV);
+    assign div_start   = ex_is_div && !div_active;
+    assign div_stall   = div_active && !ex_div_done;
+    assign ex_result   = div_active ? ex_div_result : ex_alu_result;
+
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin
+            div_active <= 1'b0;
+        end else if (div_start) begin
+            div_active <= 1'b1;
+        end else if (ex_div_done) begin
+            div_active <= 1'b0;
+        end
+    end
+
     pc u_pc(.clk(clk), .rst(rst), .en(pc_write), .next_pc(next_pc), .pc(pc_value));
     imem #(.INIT_FILE(INIT_FILE), .USE_INIT_FILE(USE_INIT_FILE), .PROGRAM_ID(PROGRAM_ID)) u_imem(
         .addr(pc_value),
@@ -168,7 +194,8 @@ module pipeline_cpu_top #(
     assign id_reg_data2_bypass = (wb_reg_write && wb_rd != 5'b0 && wb_rd == id_rs2) ? wb_data : id_reg_data2;
 
     hazard_unit u_hazard(
-        .id_ex_mem_read(ex_mem_read), .id_ex_rd(ex_rd), .if_id_rs1(id_rs1), .if_id_rs2(id_rs2), .pc_src(ex_mispredict),
+        .id_ex_mem_read(ex_mem_read), .id_ex_rd(ex_rd), .if_id_rs1(id_rs1), .if_id_rs2(id_rs2),
+        .pc_src(ex_mispredict), .ex_stall(div_stall),
         .pc_write(pc_write), .if_id_write(if_id_write), .if_id_flush(hazard_if_id_flush), .id_ex_flush(id_ex_flush)
     );
     assign if_id_flush = hazard_if_id_flush | id_predict_redirect;
@@ -210,13 +237,25 @@ module pipeline_cpu_top #(
 
     alu_control u_alu_control(.alu_op(ex_alu_op), .funct3(ex_funct3), .funct7(ex_funct7), .alu_ctrl(ex_alu_ctrl));
     assign ex_alu_b = ex_alu_src ? ex_imm : forward_b_data;
-    alu u_alu(.a(forward_a_data), .b(ex_alu_b), .alu_ctrl(ex_alu_ctrl), .y(ex_alu_result), .zero(ex_zero));
-    branch_unit u_branch_unit(.branch(ex_branch), .jal(ex_jal), .zero(ex_zero), .pc_src(ex_pc_src));
+    alu u_alu(.a(forward_a_data), .b(ex_alu_b), .alu_ctrl(ex_alu_ctrl),
+              .y(ex_alu_result), .zero(ex_zero),
+              .less_than(ex_less_than), .less_than_unsigned(ex_less_than_unsigned));
+    branch_unit u_branch_unit(.branch(ex_branch), .jal(ex_jal), .zero(ex_zero),
+                              .less_than(ex_less_than), .less_than_unsigned(ex_less_than_unsigned),
+                              .funct3(ex_funct3), .pc_src(ex_pc_src));
+
+    div_unit u_div_unit(
+        .clk(clk), .rst(rst),
+        .start(div_start),
+        .dividend(forward_a_data), .divisor(ex_alu_b),
+        .funct3(ex_funct3),
+        .result(ex_div_result), .done(ex_div_done)
+    );
 
     ex_mem_reg u_ex_mem(
         .clk(clk), .rst(rst),
         .reg_write_in(ex_reg_write), .mem_to_reg_in(ex_mem_to_reg), .mem_read_in(ex_mem_read), .mem_write_in(ex_mem_write),
-        .jal_in(ex_jal), .pc_plus4_in(ex_pc_plus4), .alu_result_in(ex_alu_result), .write_data_in(forward_b_data), .rd_in(ex_rd),
+        .jal_in(ex_jal), .pc_plus4_in(ex_pc_plus4), .alu_result_in(ex_result), .write_data_in(forward_b_data), .rd_in(ex_rd),
         .reg_write_out(mem_reg_write), .mem_to_reg_out(mem_mem_to_reg), .mem_read_out(mem_mem_read), .mem_write_out(mem_mem_write),
         .jal_out(mem_jal), .pc_plus4_out(mem_pc_plus4), .alu_result_out(mem_alu_result), .write_data_out(mem_write_data), .rd_out(mem_rd)
     );
@@ -263,7 +302,7 @@ module pipeline_cpu_top #(
         .clk(clk),
         .rst(rst),
         .inst_valid(inst_valid_wb),
-        .stall(load_use_stall),
+        .stall(load_use_stall | div_stall),
         .flush(ex_mispredict | id_predict_redirect),
         .cycle_count(debug_cycle_count),
         .instret_count(debug_instret_count),
@@ -271,7 +310,7 @@ module pipeline_cpu_top #(
         .flush_count(debug_flush_count)
     );
 
-    assign stall_debug = load_use_stall;
+    assign stall_debug = load_use_stall | div_stall;
     assign flush_debug = ex_mispredict | id_predict_redirect;
     assign predict_taken_debug = id_predict_redirect;
     assign inst_valid_debug = inst_valid_wb;

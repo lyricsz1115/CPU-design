@@ -20,7 +20,7 @@ module control(
         alu_op = 2'b00;
         mem_write = 1'b0;
         alu_src = 1'b0;
-        alu_a_zero = 1'b0;
+        alu_a_zero = 1'b0;//表示 ALU 的第一个操作数是否为 0，主要用于 LUI 指令
         reg_write = 1'b0;
 
         case (opcode)
@@ -30,7 +30,7 @@ module control(
             end
             `OPCODE_ITYPE: begin
                 alu_src = 1'b1;
-                alu_op = 2'b00;
+                alu_op = 2'b11;  // I-type ALU: funct3 decode without funct7[5] ADD/SUB trap
                 reg_write = 1'b1;
             end
             `OPCODE_LOAD: begin

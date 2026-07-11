@@ -1,0 +1,23 @@
+// mul_div.mem — M-extension + new RV32I instructions smoke test
+// Expected results:
+//   dmem[0] = 60    (MUL  20*3)
+//   dmem[1] = 6     (DIV  20/3)
+//   dmem[2] = 2     (REM  20%3)
+//   dmem[3] = 20    (ANDI 20&0xFF)
+//   dmem[4] = 48    (SLLI 3<<4)
+//   dmem[5] = 56    (ORI  48|8)
+01400093  // 00: addi x1, x0, 20
+00300113  // 01: addi x2, x0, 3
+022081b3  // 02: mul  x3, x1, x2     ; x3=60
+0220c233  // 03: div  x4, x1, x2     ; x4=6
+0220e2b3  // 04: rem  x5, x1, x2     ; x5=2
+0ff0f313  // 05: andi x6, x1, 0xff   ; x6=20
+00411393  // 06: slli x7, x2, 4      ; x7=48
+0083e413  // 07: ori  x8, x7, 8      ; x8=56
+00302023  // 08: sw   x3, 0(x0)      ; dmem[0]=60
+00402223  // 09: sw   x4, 4(x0)      ; dmem[1]=6
+00502423  // 0a: sw   x5, 8(x0)      ; dmem[2]=2
+00602623  // 0b: sw   x6, 12(x0)     ; dmem[3]=20
+00702823  // 0c: sw   x7, 16(x0)     ; dmem[4]=48
+00802a23  // 0d: sw   x8, 20(x0)     ; dmem[5]=56
+0000006f  // 0e: jal  x0, 0          ; halt

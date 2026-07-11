@@ -5,7 +5,9 @@ module alu(
     input wire [31:0] b,
     input wire [3:0] alu_ctrl,
     output reg [31:0] y,
-    output wire zero
+    output wire zero,
+    output wire less_than,
+    output wire less_than_unsigned
 );
     always @(*) begin
         case (alu_ctrl)
@@ -20,4 +22,6 @@ module alu(
     end
 
     assign zero = (y == 32'b0);
+    assign less_than = ($signed(a) < $signed(b));
+    assign less_than_unsigned = (a < b);
 endmodule

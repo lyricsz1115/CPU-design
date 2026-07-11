@@ -43,6 +43,8 @@ module cpu_top #(
     wire [31:0] alu_b;
     wire [31:0] alu_y;
     wire zero;
+    wire less_than;
+    wire less_than_unsigned;
     wire [31:0] internal_mem_data;
     wire [31:0] mem_data;
     wire [31:0] wb_data;
@@ -67,7 +69,8 @@ module cpu_top #(
     alu_control u_alu_control(.alu_op(alu_op), .funct3(funct3), .funct7(funct7), .alu_ctrl(alu_ctrl));
     assign alu_a = alu_a_zero ? 32'b0 : reg_data1;
     assign alu_b = alu_src ? imm : reg_data2;
-    alu u_alu(.a(alu_a), .b(alu_b), .alu_ctrl(alu_ctrl), .y(alu_y), .zero(zero));
+    alu u_alu(.a(alu_a), .b(alu_b), .alu_ctrl(alu_ctrl), .y(alu_y), .zero(zero),
+              .less_than(less_than), .less_than_unsigned(less_than_unsigned));
     dmem u_dmem(
         .clk(clk),
         .mem_read(mem_read && !USE_EXTERNAL_DATA_BUS),
@@ -78,7 +81,9 @@ module cpu_top #(
     );
     assign mem_data = USE_EXTERNAL_DATA_BUS ? external_read_data : internal_mem_data;
     assign wb_data = jal ? pc_plus4 : (mem_to_reg ? mem_data : alu_y);
-    branch_unit u_branch_unit(.branch(branch), .jal(jal), .zero(zero), .pc_src(pc_src));
+    branch_unit u_branch_unit(.branch(branch), .jal(jal), .zero(zero),
+                              .less_than(less_than), .less_than_unsigned(less_than_unsigned),
+                              .funct3(funct3), .pc_src(pc_src));
 
     assign external_mem_read = USE_EXTERNAL_DATA_BUS ? mem_read : 1'b0;
     assign external_mem_write = USE_EXTERNAL_DATA_BUS ? mem_write : 1'b0;
