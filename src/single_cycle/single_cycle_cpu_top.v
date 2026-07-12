@@ -60,12 +60,14 @@ module cpu_top #(
         .write_enable(imem_write_enable),
         .write_addr(imem_write_addr),
         .write_data(imem_write_data),
-        .inst(inst)
+        .debug_index(8'b0),
+        .inst(inst),
+        .debug_data()
     );
     decoder u_decoder(.inst(inst), .opcode(opcode), .rd(rd), .funct3(funct3), .rs1(rs1), .rs2(rs2), .funct7(funct7));
     control u_control(.opcode(opcode), .branch(branch), .jal(jal), .mem_read(mem_read), .mem_to_reg(mem_to_reg), .alu_op(alu_op), .mem_write(mem_write), .alu_src(alu_src), .alu_a_zero(alu_a_zero), .reg_write(reg_write));
     imm_gen u_imm_gen(.inst(inst), .imm(imm));
-    regfile u_regfile(.clk(clk), .rst(rst), .reg_write(reg_write), .rs1(rs1), .rs2(rs2), .rd(rd), .write_data(wb_data), .read_data1(reg_data1), .read_data2(reg_data2));
+    regfile u_regfile(.clk(clk), .rst(rst), .reg_write(reg_write), .rs1(rs1), .rs2(rs2), .rd(rd), .write_data(wb_data), .debug_index(5'b0), .read_data1(reg_data1), .read_data2(reg_data2), .debug_data());
     alu_control u_alu_control(.alu_op(alu_op), .funct3(funct3), .funct7(funct7), .alu_ctrl(alu_ctrl));
     assign alu_a = alu_a_zero ? 32'b0 : reg_data1;
     assign alu_b = alu_src ? imm : reg_data2;

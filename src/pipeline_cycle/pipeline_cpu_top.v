@@ -11,6 +11,8 @@ module pipeline_cpu_top #(
     input wire imem_write_enable,
     input wire [31:0] imem_write_addr,
     input wire [31:0] imem_write_data,
+    input wire [7:0] debug_imem_index,
+    input wire [4:0] debug_reg_index,
     input wire [31:0] external_read_data,
     output wire external_mem_read,
     output wire external_mem_write,
@@ -26,7 +28,9 @@ module pipeline_cpu_top #(
     output wire [31:0] debug_flush_count,
     output wire [31:0] debug_pc,
     output wire [31:0] debug_dmem0,
-    output wire [31:0] debug_dmem1
+    output wire [31:0] debug_dmem1,
+    output wire [31:0] debug_imem_data,
+    output wire [31:0] debug_reg_data
 );
     wire [31:0] pc_value;
     wire [31:0] pc_plus4_if = pc_value + 32'd4;
@@ -168,7 +172,9 @@ module pipeline_cpu_top #(
         .write_enable(ENABLE_IMEM_WRITE ? imem_write_enable : 1'b0),
         .write_addr(imem_write_addr),
         .write_data(imem_write_data),
-        .inst(inst_if)
+        .debug_index(debug_imem_index),
+        .inst(inst_if),
+        .debug_data(debug_imem_data)
     );
 
     if_id_reg u_if_id(
@@ -189,7 +195,7 @@ module pipeline_cpu_top #(
     decoder u_decoder(.inst(if_id_inst), .opcode(id_opcode), .rd(id_rd), .funct3(id_funct3), .rs1(id_rs1), .rs2(id_rs2), .funct7(id_funct7));
     control u_control(.opcode(id_opcode), .branch(id_branch), .jal(id_jal), .mem_read(id_mem_read), .mem_to_reg(id_mem_to_reg), .alu_op(id_alu_op), .mem_write(id_mem_write), .alu_src(id_alu_src), .alu_a_zero(id_alu_a_zero), .reg_write(id_reg_write));
     imm_gen u_imm_gen(.inst(if_id_inst), .imm(id_imm));
-    regfile u_regfile(.clk(clk), .rst(rst), .reg_write(wb_reg_write), .rs1(id_rs1), .rs2(id_rs2), .rd(wb_rd), .write_data(wb_data), .read_data1(id_reg_data1), .read_data2(id_reg_data2));
+    regfile u_regfile(.clk(clk), .rst(rst), .reg_write(wb_reg_write), .rs1(id_rs1), .rs2(id_rs2), .rd(wb_rd), .write_data(wb_data), .debug_index(debug_reg_index), .read_data1(id_reg_data1), .read_data2(id_reg_data2), .debug_data(debug_reg_data));
     assign id_reg_data1_bypass = (wb_reg_write && wb_rd != 5'b0 && wb_rd == id_rs1) ? wb_data : id_reg_data1;
     assign id_reg_data2_bypass = (wb_reg_write && wb_rd != 5'b0 && wb_rd == id_rs2) ? wb_data : id_reg_data2;
 

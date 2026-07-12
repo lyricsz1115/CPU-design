@@ -8,7 +8,9 @@ module editable_pipeline_system_top #(
     input wire btn_next,
     input wire btn_clear,
     input wire btn_run,
-    output wire [7:0] led
+    output wire [7:0] led,
+    output wire [7:0] seg_an,
+    output wire [7:0] seg_out
 );
     wire run_mode;
     wire imem_write_enable;
@@ -29,6 +31,8 @@ module editable_pipeline_system_top #(
     wire [31:0] debug_pc;
     wire [31:0] cpu_debug_dmem0;
     wire [31:0] cpu_debug_dmem1;
+    wire [31:0] debug_imem_data;
+    wire [31:0] debug_reg_data;
 
     wire bus_mem_read;
     wire bus_mem_write;
@@ -44,6 +48,7 @@ module editable_pipeline_system_top #(
     wire [7:0] load_addr_display = {instr_index[3:0], byte_index, 2'b00};
     wire [7:0] load_display = blink_count[24] ? sw : load_addr_display;
     wire [7:0] run_display = (bus_led != 8'b0) ? bus_led : {1'b1, debug_pc[6:0]};
+    wire [31:0] seg_display_value = run_mode ? debug_reg_data : debug_imem_data;
 
     instr_loader #(
         .DEBOUNCE_CYCLES(DEBOUNCE_CYCLES)
@@ -76,6 +81,8 @@ module editable_pipeline_system_top #(
         .imem_write_enable(imem_write_enable),
         .imem_write_addr(imem_write_addr),
         .imem_write_data(imem_write_data),
+        .debug_imem_index(sw),
+        .debug_reg_index(sw[4:0]),
         .external_read_data(bus_read_data),
         .external_mem_read(bus_mem_read),
         .external_mem_write(bus_mem_write),
@@ -91,7 +98,9 @@ module editable_pipeline_system_top #(
         .debug_flush_count(debug_flush_count),
         .debug_pc(debug_pc),
         .debug_dmem0(cpu_debug_dmem0),
-        .debug_dmem1(cpu_debug_dmem1)
+        .debug_dmem1(cpu_debug_dmem1),
+        .debug_imem_data(debug_imem_data),
+        .debug_reg_data(debug_reg_data)
     );
 
     io_bus u_io_bus (
@@ -109,6 +118,14 @@ module editable_pipeline_system_top #(
         .read_data(bus_read_data),
         .debug_dmem0(bus_debug_dmem0),
         .led(bus_led)
+    );
+
+    seg7_hex_display u_seg7_display (
+        .clk(clk),
+        .rst(rst_btn),
+        .value(seg_display_value),
+        .seg_an(seg_an),
+        .seg_out(seg_out)
     );
 
     always @(posedge clk or posedge rst_btn) begin

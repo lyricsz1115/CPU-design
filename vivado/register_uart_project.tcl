@@ -21,6 +21,7 @@ proc register_sv {fileset_name path} {
 open_project $project_file
 
 foreach relative_path {
+    src/basic_components/seg7_hex_display.v
     src/UART/uart_rx_byte.sv
     src/UART/uart_tx_byte.sv
     src/UART/uart_program_packet_rx.sv
@@ -82,5 +83,4 @@ update_compile_order -fileset sources_1
 update_compile_order -fileset sim_1
 puts "Registered UART loader sources. Synthesis top: uart_editable_pipeline_system_top"
 puts "Active constraint file: $uart_xdc"
-save_project
 close_project

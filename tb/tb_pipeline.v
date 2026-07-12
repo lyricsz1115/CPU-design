@@ -68,6 +68,8 @@ module tb_pipeline;
     pipeline_cpu_top #(.INIT_FILE("pipeline_nop.mem")) dut_nop(
         .clk(clk),
         .rst(rst),
+        .debug_imem_index(8'b0),
+        .debug_reg_index(5'b0),
         .stall_debug(nop_stall),
         .flush_debug(nop_flush),
         .inst_valid_debug(nop_valid),
@@ -77,12 +79,16 @@ module tb_pipeline;
         .debug_flush_count(nop_flush_count),
         .debug_pc(nop_pc),
         .debug_dmem0(nop_dmem0),
-        .debug_dmem1(nop_dmem1)
+        .debug_dmem1(nop_dmem1),
+        .debug_imem_data(),
+        .debug_reg_data()
     );
 
     pipeline_cpu_top #(.INIT_FILE("hazard.mem")) dut_hazard(
         .clk(clk),
         .rst(rst),
+        .debug_imem_index(8'b0),
+        .debug_reg_index(5'b0),
         .stall_debug(hazard_stall),
         .flush_debug(hazard_flush),
         .inst_valid_debug(hazard_valid),
@@ -92,12 +98,16 @@ module tb_pipeline;
         .debug_flush_count(hazard_flush_count),
         .debug_pc(hazard_pc),
         .debug_dmem0(hazard_dmem0),
-        .debug_dmem1(hazard_dmem1)
+        .debug_dmem1(hazard_dmem1),
+        .debug_imem_data(),
+        .debug_reg_data()
     );
 
     pipeline_cpu_top #(.INIT_FILE("load_use.mem")) dut_load(
         .clk(clk),
         .rst(rst),
+        .debug_imem_index(8'b0),
+        .debug_reg_index(5'b0),
         .stall_debug(load_stall),
         .flush_debug(load_flush),
         .inst_valid_debug(load_valid),
@@ -107,12 +117,16 @@ module tb_pipeline;
         .debug_flush_count(load_flush_count),
         .debug_pc(load_pc),
         .debug_dmem0(load_dmem0),
-        .debug_dmem1(load_dmem1)
+        .debug_dmem1(load_dmem1),
+        .debug_imem_data(),
+        .debug_reg_data()
     );
 
     pipeline_cpu_top #(.INIT_FILE("branch.mem")) dut_branch(
         .clk(clk),
         .rst(rst),
+        .debug_imem_index(8'b0),
+        .debug_reg_index(5'b0),
         .stall_debug(branch_stall),
         .flush_debug(branch_flush),
         .predict_taken_debug(branch_predict_taken),
@@ -123,12 +137,16 @@ module tb_pipeline;
         .debug_flush_count(branch_flush_count),
         .debug_pc(branch_pc),
         .debug_dmem0(branch_dmem0),
-        .debug_dmem1(branch_dmem1)
+        .debug_dmem1(branch_dmem1),
+        .debug_imem_data(),
+        .debug_reg_data()
     );
 
     pipeline_cpu_top #(.INIT_FILE("branch_predict.mem")) dut_pred(
         .clk(clk),
         .rst(rst),
+        .debug_imem_index(8'b0),
+        .debug_reg_index(5'b0),
         .stall_debug(pred_stall),
         .flush_debug(pred_flush),
         .predict_taken_debug(pred_predict_taken),
@@ -139,7 +157,9 @@ module tb_pipeline;
         .debug_flush_count(pred_flush_count),
         .debug_pc(pred_pc),
         .debug_dmem0(pred_dmem0),
-        .debug_dmem1(pred_dmem1)
+        .debug_dmem1(pred_dmem1),
+        .debug_imem_data(),
+        .debug_reg_data()
     );
 
     initial begin

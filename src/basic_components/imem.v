@@ -9,7 +9,9 @@ module imem #(
     input wire write_enable,
     input wire [31:0] write_addr,
     input wire [31:0] write_data,
-    output wire [31:0] inst
+    input wire [7:0] debug_index,
+    output wire [31:0] inst,
+    output wire [31:0] debug_data
 );
     reg [31:0] mem [0:MEM_WORDS-1];
     integer i;
@@ -92,4 +94,5 @@ module imem #(
     end
 
     assign inst = mem[addr[31:2]];
+    assign debug_data = mem[debug_index];
 endmodule

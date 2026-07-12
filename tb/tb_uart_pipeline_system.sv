@@ -6,9 +6,19 @@ module tb_uart_pipeline_system;
     logic clk;
     logic rst_btn;
     logic [7:0] sw;
+    logic btn_write;
+    logic btn_next;
+    logic btn_clear;
+    logic btn_run;
+    logic btn_display_mode;
     logic uart_rx;
     logic uart_tx;
     logic [7:0] led;
+    logic mode_led_imem;
+    logic mode_led_dmem;
+    logic mode_led_reg;
+    logic [7:0] seg_an;
+    logic [7:0] seg_out;
     integer i;
     logic [31:0] program_words [0:8];
 
@@ -19,9 +29,19 @@ module tb_uart_pipeline_system;
         .clk(clk),
         .rst_btn(rst_btn),
         .sw(sw),
+        .btn_write(btn_write),
+        .btn_next(btn_next),
+        .btn_clear(btn_clear),
+        .btn_run(btn_run),
+        .btn_display_mode(btn_display_mode),
         .uart_rx(uart_rx),
         .uart_tx(uart_tx),
-        .led(led)
+        .led(led),
+        .mode_led_imem(mode_led_imem),
+        .mode_led_dmem(mode_led_dmem),
+        .mode_led_reg(mode_led_reg),
+        .seg_an(seg_an),
+        .seg_out(seg_out)
     );
 
     always #5 clk = ~clk;
@@ -144,6 +164,11 @@ module tb_uart_pipeline_system;
         clk = 1'b0;
         rst_btn = 1'b1;
         sw = 8'd0;
+        btn_write = 1'b0;
+        btn_next = 1'b0;
+        btn_clear = 1'b0;
+        btn_run = 1'b0;
+        btn_display_mode = 1'b0;
         uart_rx = 1'b1;
         repeat (10) @(posedge clk);
         rst_btn = 1'b0;

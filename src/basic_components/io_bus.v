@@ -12,8 +12,10 @@ module io_bus #(
     input wire [31:0] instret_count,
     input wire [31:0] stall_count,
     input wire [31:0] flush_count,
+    input wire [7:0] debug_index,
     output reg [31:0] read_data,
     output wire [31:0] debug_dmem0,
+    output wire [31:0] debug_data,
     output wire [7:0] led
 );
     localparam IO_LED_ADDR      = 32'h1000_0000;
@@ -73,5 +75,6 @@ module io_bus #(
     end
 
     assign debug_dmem0 = mem[0];
+    assign debug_data = mem[debug_index];
     assign led = (led_reg != 8'b0) ? led_reg : mem[0][7:0];
 endmodule
