@@ -201,8 +201,12 @@ module pipeline_cpu_top #(
     assign div_stall   = ex_is_div && !div_result_valid && !ex_div_done;
     assign front_stall = div_stall | cache_stall;
     assign id_ex_en    = ~front_stall;
-    assign ex_mem_en   = ~cache_stall;
-    assign ex_mem_flush = div_stall;
+    // BUG #5 fix: Freeze EX/MEM during div_stall instead of flushing.
+    // The old ex_mem_flush=div_stall cleared EX/MEM on the same clock edge
+    // that io_bus was sampling the write-enable for the previous SW in MEM,
+    // causing a race that lost the write to dmem.
+    assign ex_mem_en   = ~cache_stall & ~div_stall;
+    assign ex_mem_flush = 1'b0;
     assign ex_result   = ex_is_div ?
                          (div_result_valid ? div_result_latched : ex_div_result) :
                          ex_alu_result;

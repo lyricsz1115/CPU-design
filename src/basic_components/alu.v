@@ -14,10 +14,24 @@ module alu(
     assign less_than_unsigned = a < b;
     assign zero               = (y == 32'b0);
 
-    // 64-bit intermediate for MULH / MULHSU / MULHU
-    wire [63:0] mul_signed   = $signed(a) * $signed(b);
-    wire [63:0] mul_signed_u = $signed(a) * $unsigned(b);
-    wire [63:0] mul_unsigned = a * b;
+    // BUG #6 fix: Single shared 64-bit multiplier with operand conditioning.
+    // Three parallel 32×32→64 multipliers (signed, signed×unsigned, unsigned)
+    // created ~12ns combinational path through the final MUX tree
+    // (WNS = -11.904 ns on 10 ns clock).  Replace with ONE signed multiplier
+    // whose operands are sign/zero-extended based on the MUL variant.
+    //
+    //  Variant   mul_a_64                 mul_b_64
+    //  MUL       sign-extended            sign-extended
+    //  MULH      sign-extended            sign-extended
+    //  MULHSU    sign-extended            zero-extended
+    //  MULHU     zero-extended            zero-extended
+    wire signed [63:0] mul_a_s = (alu_ctrl == `ALU_MULHU)
+                                 ? $signed({32'd0, a})
+                                 : $signed({{32{a[31]}}, a});
+    wire signed [63:0] mul_b_s = (alu_ctrl == `ALU_MULHSU || alu_ctrl == `ALU_MULHU)
+                                 ? $signed({32'd0, b})
+                                 : $signed({{32{b[31]}}, b});
+    wire signed [63:0] mul_result_s = mul_a_s * mul_b_s;
 
     always @(*) begin
         case (alu_ctrl)
@@ -31,26 +45,16 @@ module alu(
             `ALU_SLL:    y = a << b[4:0];
             `ALU_SRL:    y = a >> b[4:0];
             `ALU_SRA:    y = $signed(a) >>> b[4:0];
-            `ALU_MUL:    y = a * b;              // lower 32 bits
-            `ALU_MULH:   y = mul_signed[63:32];
-            `ALU_MULHSU: y = mul_signed_u[63:32];
-            `ALU_MULHU:  y = mul_unsigned[63:32];
-            // Single-cycle div/rem fallback (simulation / single-cycle CPU)
+            `ALU_MUL:    y = mul_result_s[31:0];
+            `ALU_MULH:   y = mul_result_s[63:32];
+            `ALU_MULHSU: y = mul_result_s[63:32];
+            `ALU_MULHU:  y = mul_result_s[63:32];
+            // BUG #3 fix: Dead value to prevent Vivado from inferring a
+            // 32-bit combinational divider (~30-50 ns, violates 10 ns timing).
+            // Pipeline CPU uses div_unit.v (multi-cycle FSM) for DIV/REM;
+            // single-cycle CPU does NOT support division with this change.
             `ALU_DIV, `ALU_DIVU, `ALU_REM, `ALU_REMU: begin
-                // Divide-by-zero and overflow handling per RISC-V spec
-                if (b == 32'b0) begin
-                    y = (alu_ctrl == `ALU_REM || alu_ctrl == `ALU_REMU) ? a : 32'hffffffff;
-                end else if (alu_ctrl == `ALU_DIV && a == 32'h80000000 && b == 32'hffffffff) begin
-                    y = 32'h80000000;   // signed overflow
-                end else begin
-                    case (alu_ctrl)
-                        `ALU_DIV:  y = $signed($signed(a) / $signed(b));
-                        `ALU_DIVU: y = a / b;
-                        `ALU_REM:  y = (a == 32'h80000000 && b == 32'hffffffff)
-                                       ? 32'd0 : $signed($signed(a) % $signed(b));
-                        `ALU_REMU: y = a % b;
-                    endcase
-                end
+                y = 32'b0;
             end
             default:     y = 32'b0;
         endcase
