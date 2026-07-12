@@ -6,8 +6,10 @@ module regfile(
     input wire [4:0] rs2,
     input wire [4:0] rd,
     input wire [31:0] write_data,
+    input wire [4:0] debug_index,
     output wire [31:0] read_data1,
-    output wire [31:0] read_data2
+    output wire [31:0] read_data2,
+    output wire [31:0] debug_data
 );
     reg [31:0] regs [0:31];
     integer i;
@@ -24,4 +26,5 @@ module regfile(
 //read1,read2
     assign read_data1 = (rs1 == 5'b0) ? 32'b0 : regs[rs1];
     assign read_data2 = (rs2 == 5'b0) ? 32'b0 : regs[rs2];
+    assign debug_data = (debug_index == 5'b0) ? 32'b0 : regs[debug_index];
 endmodule

@@ -58,7 +58,6 @@ module alu_control(
                     default: alu_ctrl = `ALU_NOP;
                 endcase
             end
-
             default: alu_ctrl = `ALU_NOP;
         endcase
     end

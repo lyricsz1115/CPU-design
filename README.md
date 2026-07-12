@@ -149,6 +149,16 @@ PASS: single-cycle sum dmem[0]=55
 - `tb_pipeline`：流水线冒险综合测试，覆盖数据前推、load-use 暂停、BTFNT 分支预测和 flush。
 - `tb_editable_loader`：模拟开关/按键逐 byte 写入指令，再运行 CPU。
 
+## UART 指令装载
+
+工程新增 `uart_editable_pipeline_system_top`，可以通过板载 CP2102 串口
+从电脑输入 32 位十六进制指令或直接装载 `.mem` 文件。通信采用 CRC-8、
+ACK/NACK、序号、绝对地址和超时重传；原按键装载顶层继续保留。
+
+完整协议、Vivado 注册步骤和 Python 命令见：
+
+- [doc/uart_loader.md](doc/uart_loader.md)
+
 ## 可编辑指令装载模式
 
 `editable_minisys_top` 支持在板子上通过开关和按键写入指令存储器：

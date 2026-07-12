@@ -30,6 +30,9 @@ module cached_pipeline_minisys_top #(
     wire [31:0] debug_pc;
     wire [31:0] cpu_debug_dmem0;
     wire [31:0] cpu_debug_dmem1;
+    wire [31:0] cpu_debug_dmem_data;
+    wire [31:0] debug_imem_data;
+    wire [31:0] debug_reg_data;
 
     pipeline_cpu_top #(
         .INIT_FILE("cache_board_demo.mem"),
@@ -46,6 +49,9 @@ module cached_pipeline_minisys_top #(
         .imem_write_enable(1'b0),
         .imem_write_addr(32'b0),
         .imem_write_data(32'b0),
+        .debug_imem_index(sw),
+        .debug_dmem_index(sw),
+        .debug_reg_index(sw[4:0]),
         .external_read_data(bus_read_data),
         .external_mem_read(bus_mem_read),
         .external_mem_write(bus_mem_write),
@@ -64,7 +70,10 @@ module cached_pipeline_minisys_top #(
         .debug_cache_miss_count(debug_cache_miss_count),
         .debug_pc(debug_pc),
         .debug_dmem0(cpu_debug_dmem0),
-        .debug_dmem1(cpu_debug_dmem1)
+        .debug_dmem1(cpu_debug_dmem1),
+        .debug_dmem_data(cpu_debug_dmem_data),
+        .debug_imem_data(debug_imem_data),
+        .debug_reg_data(debug_reg_data)
     );
 
     io_bus u_io_bus (
@@ -79,8 +88,10 @@ module cached_pipeline_minisys_top #(
         .instret_count(debug_instret_count),
         .stall_count(debug_stall_count),
         .flush_count(debug_flush_count),
+        .debug_index(sw),
         .read_data(bus_read_data),
         .debug_dmem0(bus_debug_dmem0),
+        .debug_data(),
         .led(bus_led)
     );
 

@@ -22,7 +22,6 @@ module system_top #(
     wire [31:0] instret_count;
     wire [31:0] stall_count;
     wire [31:0] flush_count;
-    wire [31:0] unused_cpu_dmem0;
 
     cpu_top #(
         .INIT_FILE(INIT_FILE),
@@ -42,7 +41,7 @@ module system_top #(
         .external_write_data(bus_write_data),
         .inst_valid(inst_valid),
         .debug_pc(debug_pc),
-        .debug_dmem0(unused_cpu_dmem0)
+        .debug_dmem0(debug_dmem0)
     );
 
     perf_counter u_perf_counter(
@@ -69,8 +68,10 @@ module system_top #(
         .instret_count(instret_count),
         .stall_count(stall_count),
         .flush_count(flush_count),
+        .debug_index(sw),
         .read_data(bus_read_data),
-        .debug_dmem0(debug_dmem0),
+        .debug_dmem0(),
+        .debug_data(),
         .led(led)
     );
 

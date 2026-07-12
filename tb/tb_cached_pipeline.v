@@ -23,6 +23,9 @@ module tb_cached_pipeline;
     wire [31:0] mul_pc;
     wire [31:0] mul_internal_dmem0;
     wire [31:0] mul_internal_dmem1;
+    wire [31:0] mul_internal_dmem_data;
+    wire [31:0] mul_debug_imem_data;
+    wire [31:0] mul_debug_reg_data;
 
     cached_pipeline_minisys_top u_board_demo (
         .clk(clk),
@@ -43,6 +46,9 @@ module tb_cached_pipeline;
         .imem_write_enable(1'b0),
         .imem_write_addr(32'b0),
         .imem_write_data(32'b0),
+        .debug_imem_index(8'b0),
+        .debug_dmem_index(8'b0),
+        .debug_reg_index(5'b0),
         .external_read_data(mul_bus_read_data),
         .external_mem_read(mul_bus_mem_read),
         .external_mem_write(mul_bus_mem_write),
@@ -57,7 +63,10 @@ module tb_cached_pipeline;
         .debug_cache_miss_count(mul_cache_miss_count),
         .debug_pc(mul_pc),
         .debug_dmem0(mul_internal_dmem0),
-        .debug_dmem1(mul_internal_dmem1)
+        .debug_dmem1(mul_internal_dmem1),
+        .debug_dmem_data(mul_internal_dmem_data),
+        .debug_imem_data(mul_debug_imem_data),
+        .debug_reg_data(mul_debug_reg_data)
     );
 
     io_bus u_mul_io_bus (
@@ -72,8 +81,10 @@ module tb_cached_pipeline;
         .instret_count(mul_instret_count),
         .stall_count(mul_stall_count),
         .flush_count(mul_flush_count),
+        .debug_index(8'b0),
         .read_data(mul_bus_read_data),
         .debug_dmem0(mul_bus_debug_dmem0),
+        .debug_data(),
         .led(mul_bus_led)
     );
 
@@ -103,7 +114,7 @@ module tb_cached_pipeline;
 
         repeat (500) @(posedge clk);
 
-        check_value("cache demo mem[0]", u_board_demo.u_io_bus.mem[0], 32'h55);
+        check_value("cache demo mem[0]", u_board_demo.u_cpu.u_dmem.mem[0], 32'h55);
         check_value("MMIO LED bypass", u_board_demo.u_io_bus.led_reg, 32'h55);
         check_value("cache demo access", u_board_demo.debug_cache_access_count, 32'd6);
         check_value("cache demo hit", u_board_demo.debug_cache_hit_count, 32'd4);
@@ -134,12 +145,12 @@ module tb_cached_pipeline;
             $finish;
         end
 
-        check_value("cached MUL", u_mul_io_bus.mem[0], 32'd60);
-        check_value("cached DIV", u_mul_io_bus.mem[1], 32'd6);
-        check_value("cached REM", u_mul_io_bus.mem[2], 32'd2);
-        check_value("cached ANDI", u_mul_io_bus.mem[3], 32'd20);
-        check_value("cached SLLI", u_mul_io_bus.mem[4], 32'd48);
-        check_value("cached ORI", u_mul_io_bus.mem[5], 32'd56);
+        check_value("cached MUL", u_mul_cache_cpu.u_dmem.mem[0], 32'd60);
+        check_value("cached DIV", u_mul_cache_cpu.u_dmem.mem[1], 32'd6);
+        check_value("cached REM", u_mul_cache_cpu.u_dmem.mem[2], 32'd2);
+        check_value("cached ANDI", u_mul_cache_cpu.u_dmem.mem[3], 32'd20);
+        check_value("cached SLLI", u_mul_cache_cpu.u_dmem.mem[4], 32'd48);
+        check_value("cached ORI", u_mul_cache_cpu.u_dmem.mem[5], 32'd56);
         check_value("mul cache access", mul_cache_access_count, 32'd6);
         check_value("mul cache hit", mul_cache_hit_count, 32'd0);
         check_value("mul cache miss", mul_cache_miss_count, 32'd6);

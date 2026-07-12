@@ -14,6 +14,9 @@ module pipeline_cpu_top #(
     input wire imem_write_enable,
     input wire [31:0] imem_write_addr,
     input wire [31:0] imem_write_data,
+    input wire [7:0] debug_imem_index,
+    input wire [7:0] debug_dmem_index,
+    input wire [4:0] debug_reg_index,
     input wire [31:0] external_read_data,
     output wire external_mem_read,
     output wire external_mem_write,
@@ -32,7 +35,10 @@ module pipeline_cpu_top #(
     output wire [31:0] debug_cache_miss_count,
     output wire [31:0] debug_pc,
     output wire [31:0] debug_dmem0,
-    output wire [31:0] debug_dmem1
+    output wire [31:0] debug_dmem1,
+    output wire [31:0] debug_dmem_data,
+    output wire [31:0] debug_imem_data,
+    output wire [31:0] debug_reg_data
 );
     wire [31:0] pc_value;
     wire [31:0] pc_plus4_if = pc_value + 32'd4;
@@ -130,6 +136,7 @@ module pipeline_cpu_top #(
     wire mem_cacheable;
     wire cached_mem_access;
     wire cache_stall;
+    wire external_bus_selected;
 
     wire cache_req_valid;
     wire cache_req_ready;
@@ -238,7 +245,9 @@ module pipeline_cpu_top #(
         .write_enable(ENABLE_IMEM_WRITE ? imem_write_enable : 1'b0),
         .write_addr(imem_write_addr),
         .write_data(imem_write_data),
-        .inst(inst_if)
+        .debug_index(debug_imem_index),
+        .inst(inst_if),
+        .debug_data(debug_imem_data)
     );
 
     if_id_reg u_if_id(
@@ -260,7 +269,7 @@ module pipeline_cpu_top #(
     control u_control(.opcode(id_opcode), .branch(id_branch), .jal(id_jal), .mem_read(id_mem_read), .mem_to_reg(id_mem_to_reg), .alu_op(id_alu_op), .mem_write(id_mem_write), .alu_src(id_alu_src), .alu_a_zero(id_alu_a_zero), .reg_write(id_reg_write));
     imm_gen u_imm_gen(.inst(if_id_inst), .imm(id_imm));
     assign wb_commit_write = wb_reg_write && mem_wb_valid;
-    regfile u_regfile(.clk(clk), .rst(rst), .reg_write(wb_commit_write), .rs1(id_rs1), .rs2(id_rs2), .rd(wb_rd), .write_data(wb_data), .read_data1(id_reg_data1), .read_data2(id_reg_data2));
+    regfile u_regfile(.clk(clk), .rst(rst), .reg_write(wb_commit_write), .rs1(id_rs1), .rs2(id_rs2), .rd(wb_rd), .write_data(wb_data), .debug_index(debug_reg_index), .read_data1(id_reg_data1), .read_data2(id_reg_data2), .debug_data(debug_reg_data));
     assign id_reg_data1_bypass = (wb_commit_write && wb_rd != 5'b0 && wb_rd == id_rs1) ? wb_data : id_reg_data1;
     assign id_reg_data2_bypass = (wb_commit_write && wb_rd != 5'b0 && wb_rd == id_rs2) ? wb_data : id_reg_data2;
 
@@ -422,17 +431,21 @@ module pipeline_cpu_top #(
 
     dmem u_dmem(
         .clk(clk),
-        .mem_read(storage_mem_read && !USE_EXTERNAL_DATA_BUS),
-        .mem_write(storage_mem_write && !USE_EXTERNAL_DATA_BUS),
+        .mem_read(storage_mem_read && !external_bus_selected),
+        .mem_write(storage_mem_write && !external_bus_selected),
         .addr(storage_addr),
         .write_data(storage_write_data),
-        .read_data(internal_mem_read_data)
+        .debug_index(debug_dmem_index),
+        .read_data(internal_mem_read_data),
+        .debug_data(debug_dmem_data)
     );
 
-    assign backend_read_data = USE_EXTERNAL_DATA_BUS ?
-        external_read_data : internal_mem_read_data;
+    assign external_bus_selected = USE_EXTERNAL_DATA_BUS &&
+        (storage_addr[31:16] == 16'h1000) &&
+        (storage_mem_read || storage_mem_write);
+    assign backend_read_data = internal_mem_read_data;
     assign mem_read_data = cached_mem_access ? cache_resp_rdata :
-        (USE_EXTERNAL_DATA_BUS ? external_read_data : internal_mem_read_data);
+        (external_bus_selected ? external_read_data : internal_mem_read_data);
 
     mem_wb_reg u_mem_wb(
         .clk(clk), .rst(rst), .en(1'b1), .flush(cache_stall),
@@ -472,8 +485,8 @@ module pipeline_cpu_top #(
     assign flush_debug = ex_mispredict | id_predict_redirect;
     assign predict_taken_debug = id_predict_redirect;
     assign inst_valid_debug = inst_valid_wb;
-    assign external_mem_read = USE_EXTERNAL_DATA_BUS ? storage_mem_read : 1'b0;
-    assign external_mem_write = USE_EXTERNAL_DATA_BUS ? storage_mem_write : 1'b0;
+    assign external_mem_read = external_bus_selected ? storage_mem_read : 1'b0;
+    assign external_mem_write = external_bus_selected ? storage_mem_write : 1'b0;
     assign external_addr = storage_addr;
     assign external_write_data = storage_write_data;
     assign debug_cache_access_count = ENABLE_DATA_CACHE ? cache_access_count : 32'b0;

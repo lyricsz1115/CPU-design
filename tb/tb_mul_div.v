@@ -20,6 +20,9 @@ module tb_mul_div;
     wire [31:0]        pipe_pc;
     wire [31:0]        pipe_dmem0;
     wire [31:0]        pipe_dmem1;
+    wire [31:0]        pipe_dmem_data;
+    wire [31:0]        pipe_imem_data;
+    wire [31:0]        pipe_reg_data;
 
     // ── 流水线 CPU: branch 程序（回归，验证新分支单元不影响旧程序）──
     wire               br_stall;
@@ -32,6 +35,9 @@ module tb_mul_div;
     wire [31:0]        br_pc;
     wire [31:0]        br_dmem0;
     wire [31:0]        br_dmem1;
+    wire [31:0]        br_dmem_data;
+    wire [31:0]        br_imem_data;
+    wire [31:0]        br_reg_data;
 
     // ── 单周期 CPU: mul_div 程序（单周期 fallback 路径）──
     wire [31:0]        sc_pc;
@@ -56,17 +62,31 @@ module tb_mul_div;
         .imem_write_enable(1'b0),
         .imem_write_addr(32'b0),
         .imem_write_data(32'b0),
+        .debug_imem_index(8'b0),
+        .debug_dmem_index(8'b0),
+        .debug_reg_index(5'b0),
         .external_read_data(32'b0),
+        .external_mem_read(),
+        .external_mem_write(),
+        .external_addr(),
+        .external_write_data(),
         .stall_debug(pipe_stall),
         .flush_debug(pipe_flush),
+        .predict_taken_debug(),
         .inst_valid_debug(pipe_valid),
         .debug_cycle_count(pipe_cycle),
         .debug_instret_count(pipe_instret),
         .debug_stall_count(pipe_stall_cnt),
         .debug_flush_count(pipe_flush_cnt),
+        .debug_cache_access_count(),
+        .debug_cache_hit_count(),
+        .debug_cache_miss_count(),
         .debug_pc(pipe_pc),
         .debug_dmem0(pipe_dmem0),
-        .debug_dmem1(pipe_dmem1)
+        .debug_dmem1(pipe_dmem1),
+        .debug_dmem_data(pipe_dmem_data),
+        .debug_imem_data(pipe_imem_data),
+        .debug_reg_data(pipe_reg_data)
     );
 
     pipeline_cpu_top #(
@@ -79,17 +99,31 @@ module tb_mul_div;
         .imem_write_enable(1'b0),
         .imem_write_addr(32'b0),
         .imem_write_data(32'b0),
+        .debug_imem_index(8'b0),
+        .debug_dmem_index(8'b0),
+        .debug_reg_index(5'b0),
         .external_read_data(32'b0),
+        .external_mem_read(),
+        .external_mem_write(),
+        .external_addr(),
+        .external_write_data(),
         .stall_debug(br_stall),
         .flush_debug(br_flush),
+        .predict_taken_debug(),
         .inst_valid_debug(br_valid),
         .debug_cycle_count(br_cycle),
         .debug_instret_count(br_instret),
         .debug_stall_count(br_stall_cnt),
         .debug_flush_count(br_flush_cnt),
+        .debug_cache_access_count(),
+        .debug_cache_hit_count(),
+        .debug_cache_miss_count(),
         .debug_pc(br_pc),
         .debug_dmem0(br_dmem0),
-        .debug_dmem1(br_dmem1)
+        .debug_dmem1(br_dmem1),
+        .debug_dmem_data(br_dmem_data),
+        .debug_imem_data(br_imem_data),
+        .debug_reg_data(br_reg_data)
     );
 
     cpu_top #(

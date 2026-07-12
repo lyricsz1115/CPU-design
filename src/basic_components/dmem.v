@@ -6,7 +6,9 @@ module dmem #(
     input wire mem_write,
     input wire [31:0] addr,
     input wire [31:0] write_data,
-    output wire [31:0] read_data
+    input wire [7:0] debug_index,
+    output wire [31:0] read_data,
+    output wire [31:0] debug_data
 );
     reg [31:0] mem [0:MEM_WORDS-1];
     integer i;
@@ -18,6 +20,7 @@ module dmem #(
     end
 
     assign read_data = mem_read ? mem[addr[31:2]] : 32'b0;
+    assign debug_data = mem[debug_index];
 
     always @(posedge clk) begin
         if (mem_write) begin
