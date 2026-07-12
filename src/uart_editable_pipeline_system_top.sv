@@ -119,7 +119,8 @@ module uart_editable_pipeline_system_top #(
                                 manual_imem_write_enable;
     wire [7:0] load_display = manual_loader_active ? manual_load_display : uart_load_display;
     wire [7:0] run_display = (bus_led != 8'd0) ? bus_led :
-                             {1'b1, debug_pc[6:0]};
+                             ((cpu_debug_dmem0[7:0] != 8'd0) ? cpu_debug_dmem0[7:0] :
+                              {1'b1, debug_pc[6:0]});
     wire display_mode_pulse = btn_display_state & ~btn_display_state_d;
     wire uart_loader_stop_request = packet_valid &&
                                     ((request_command == 8'h01) ||
@@ -240,6 +241,7 @@ module uart_editable_pipeline_system_top #(
         .imem_write_addr(imem_write_addr),
         .imem_write_data(imem_write_data),
         .debug_imem_index(sw),
+        .debug_dmem_index(sw),
         .debug_reg_index(sw[4:0]),
         .external_read_data(bus_read_data),
         .external_mem_read(bus_mem_read),
@@ -257,6 +259,7 @@ module uart_editable_pipeline_system_top #(
         .debug_pc(debug_pc),
         .debug_dmem0(cpu_debug_dmem0),
         .debug_dmem1(cpu_debug_dmem1),
+        .debug_dmem_data(debug_dmem_data),
         .debug_imem_data(debug_imem_data),
         .debug_reg_data(debug_reg_data)
     );
@@ -276,7 +279,7 @@ module uart_editable_pipeline_system_top #(
         .debug_index(sw),
         .read_data(bus_read_data),
         .debug_dmem0(bus_debug_dmem0),
-        .debug_data(debug_dmem_data),
+        .debug_data(),
         .led(bus_led)
     );
 

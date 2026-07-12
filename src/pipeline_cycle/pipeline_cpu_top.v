@@ -12,6 +12,7 @@ module pipeline_cpu_top #(
     input wire [31:0] imem_write_addr,
     input wire [31:0] imem_write_data,
     input wire [7:0] debug_imem_index,
+    input wire [7:0] debug_dmem_index,
     input wire [4:0] debug_reg_index,
     input wire [31:0] external_read_data,
     output wire external_mem_read,
@@ -29,6 +30,7 @@ module pipeline_cpu_top #(
     output wire [31:0] debug_pc,
     output wire [31:0] debug_dmem0,
     output wire [31:0] debug_dmem1,
+    output wire [31:0] debug_dmem_data,
     output wire [31:0] debug_imem_data,
     output wire [31:0] debug_reg_data
 );
@@ -116,6 +118,7 @@ module pipeline_cpu_top #(
     wire [4:0] mem_rd;
     wire [31:0] internal_mem_read_data;
     wire [31:0] mem_read_data;
+    wire external_bus_selected;
 
     wire wb_reg_write;
     wire wb_mem_to_reg;
@@ -276,13 +279,16 @@ module pipeline_cpu_top #(
 
     dmem u_dmem(
         .clk(clk),
-        .mem_read(mem_mem_read && !USE_EXTERNAL_DATA_BUS),
-        .mem_write(mem_mem_write && !USE_EXTERNAL_DATA_BUS),
+        .mem_read(mem_mem_read && !external_bus_selected),
+        .mem_write(mem_mem_write && !external_bus_selected),
         .addr(mem_alu_result),
         .write_data(mem_write_data),
-        .read_data(internal_mem_read_data)
+        .debug_index(debug_dmem_index),
+        .read_data(internal_mem_read_data),
+        .debug_data(debug_dmem_data)
     );
-    assign mem_read_data = USE_EXTERNAL_DATA_BUS ? external_read_data : internal_mem_read_data;
+    assign external_bus_selected = USE_EXTERNAL_DATA_BUS && (mem_alu_result[31:16] == 16'h1000);
+    assign mem_read_data = external_bus_selected ? external_read_data : internal_mem_read_data;
 
     mem_wb_reg u_mem_wb(
         .clk(clk), .rst(rst),
@@ -320,8 +326,8 @@ module pipeline_cpu_top #(
     assign flush_debug = ex_mispredict | id_predict_redirect;
     assign predict_taken_debug = id_predict_redirect;
     assign inst_valid_debug = inst_valid_wb;
-    assign external_mem_read = USE_EXTERNAL_DATA_BUS ? mem_mem_read : 1'b0;
-    assign external_mem_write = USE_EXTERNAL_DATA_BUS ? mem_mem_write : 1'b0;
+    assign external_mem_read = external_bus_selected ? mem_mem_read : 1'b0;
+    assign external_mem_write = external_bus_selected ? mem_mem_write : 1'b0;
     assign external_addr = mem_alu_result;
     assign external_write_data = mem_write_data;
     assign debug_pc = pc_value;

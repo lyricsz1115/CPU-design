@@ -194,13 +194,12 @@ module tb_uart_pipeline_system;
         repeat (1000) @(posedge clk);
 
         if (led != 8'h37)
-            $fatal(1, "UART-loaded pipeline program failed led=%02h run=%0d rst=%0d pc=%08h if_inst=%08h id_inst=%08h id_we=%0d wb_we=%0d wb_rd=%0d x1=%08h x2=%08h io_mem0=%08h internal_mem0=%08h",
+            $fatal(1, "UART-loaded pipeline program failed led=%02h run=%0d rst=%0d pc=%08h if_inst=%08h id_inst=%08h id_we=%0d wb_we=%0d wb_rd=%0d x1=%08h x2=%08h dmem0=%08h",
                    led, dut.run_mode, dut.cpu_rst, dut.debug_pc, dut.u_cpu.inst_if,
                    dut.u_cpu.if_id_inst, dut.u_cpu.id_reg_write,
                    dut.u_cpu.wb_reg_write, dut.u_cpu.wb_rd,
                    dut.u_cpu.u_regfile.regs[1],
-                   dut.u_cpu.u_regfile.regs[2], dut.u_io_bus.mem[0],
-                   dut.u_cpu.u_dmem.mem[0]);
+                   dut.u_cpu.u_regfile.regs[2], dut.u_cpu.u_dmem.mem[0]);
 
         $display("PASS: UART-loaded sum program produced led=0x37");
         $finish;

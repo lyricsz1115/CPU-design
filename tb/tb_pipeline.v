@@ -69,6 +69,7 @@ module tb_pipeline;
         .clk(clk),
         .rst(rst),
         .debug_imem_index(8'b0),
+        .debug_dmem_index(8'b0),
         .debug_reg_index(5'b0),
         .stall_debug(nop_stall),
         .flush_debug(nop_flush),
@@ -80,6 +81,7 @@ module tb_pipeline;
         .debug_pc(nop_pc),
         .debug_dmem0(nop_dmem0),
         .debug_dmem1(nop_dmem1),
+        .debug_dmem_data(),
         .debug_imem_data(),
         .debug_reg_data()
     );
@@ -88,6 +90,7 @@ module tb_pipeline;
         .clk(clk),
         .rst(rst),
         .debug_imem_index(8'b0),
+        .debug_dmem_index(8'b0),
         .debug_reg_index(5'b0),
         .stall_debug(hazard_stall),
         .flush_debug(hazard_flush),
@@ -99,6 +102,7 @@ module tb_pipeline;
         .debug_pc(hazard_pc),
         .debug_dmem0(hazard_dmem0),
         .debug_dmem1(hazard_dmem1),
+        .debug_dmem_data(),
         .debug_imem_data(),
         .debug_reg_data()
     );
@@ -107,6 +111,7 @@ module tb_pipeline;
         .clk(clk),
         .rst(rst),
         .debug_imem_index(8'b0),
+        .debug_dmem_index(8'b0),
         .debug_reg_index(5'b0),
         .stall_debug(load_stall),
         .flush_debug(load_flush),
@@ -118,6 +123,7 @@ module tb_pipeline;
         .debug_pc(load_pc),
         .debug_dmem0(load_dmem0),
         .debug_dmem1(load_dmem1),
+        .debug_dmem_data(),
         .debug_imem_data(),
         .debug_reg_data()
     );
@@ -126,6 +132,7 @@ module tb_pipeline;
         .clk(clk),
         .rst(rst),
         .debug_imem_index(8'b0),
+        .debug_dmem_index(8'b0),
         .debug_reg_index(5'b0),
         .stall_debug(branch_stall),
         .flush_debug(branch_flush),
@@ -138,6 +145,7 @@ module tb_pipeline;
         .debug_pc(branch_pc),
         .debug_dmem0(branch_dmem0),
         .debug_dmem1(branch_dmem1),
+        .debug_dmem_data(),
         .debug_imem_data(),
         .debug_reg_data()
     );
@@ -146,6 +154,7 @@ module tb_pipeline;
         .clk(clk),
         .rst(rst),
         .debug_imem_index(8'b0),
+        .debug_dmem_index(8'b0),
         .debug_reg_index(5'b0),
         .stall_debug(pred_stall),
         .flush_debug(pred_flush),
@@ -158,6 +167,7 @@ module tb_pipeline;
         .debug_pc(pred_pc),
         .debug_dmem0(pred_dmem0),
         .debug_dmem1(pred_dmem1),
+        .debug_dmem_data(),
         .debug_imem_data(),
         .debug_reg_data()
     );
