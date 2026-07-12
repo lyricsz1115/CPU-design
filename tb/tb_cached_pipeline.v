@@ -66,7 +66,14 @@ module tb_cached_pipeline;
         .debug_dmem1(mul_internal_dmem1),
         .debug_dmem_data(mul_internal_dmem_data),
         .debug_imem_data(mul_debug_imem_data),
-        .debug_reg_data(mul_debug_reg_data)
+        .debug_reg_data(mul_debug_reg_data),
+        .mtimecmp_mmio_write(1'b0),
+        .mtimecmp_mmio_wdata(32'b0),
+        .mtime_mmio_val(),
+        .mtimecmp_mmio_val(),
+        .irq_external(1'b0),
+        .debug_stall(1'b0),
+        .trap_taken_out()
     );
 
     io_bus u_mul_io_bus (
@@ -85,7 +92,12 @@ module tb_cached_pipeline;
         .read_data(mul_bus_read_data),
         .debug_dmem0(mul_bus_debug_dmem0),
         .debug_data(),
-        .led(mul_bus_led)
+        .led(mul_bus_led),
+        .mtimecmp_write(),
+        .mtimecmp_wdata(),
+        .mtime_val(32'b0),
+        .mtimecmp_val(32'b0),
+        .irq_external(1'b0)
     );
 
     initial begin

@@ -86,7 +86,14 @@ module tb_mul_div;
         .debug_dmem1(pipe_dmem1),
         .debug_dmem_data(pipe_dmem_data),
         .debug_imem_data(pipe_imem_data),
-        .debug_reg_data(pipe_reg_data)
+        .debug_reg_data(pipe_reg_data),
+        .mtimecmp_mmio_write(1'b0),
+        .mtimecmp_mmio_wdata(32'b0),
+        .mtime_mmio_val(),
+        .mtimecmp_mmio_val(),
+        .irq_external(1'b0),
+        .debug_stall(1'b0),
+        .trap_taken_out()
     );
 
     pipeline_cpu_top #(
@@ -123,7 +130,14 @@ module tb_mul_div;
         .debug_dmem1(br_dmem1),
         .debug_dmem_data(br_dmem_data),
         .debug_imem_data(br_imem_data),
-        .debug_reg_data(br_reg_data)
+        .debug_reg_data(br_reg_data),
+        .mtimecmp_mmio_write(1'b0),
+        .mtimecmp_mmio_wdata(32'b0),
+        .mtime_mmio_val(),
+        .mtimecmp_mmio_val(),
+        .irq_external(1'b0),
+        .debug_stall(1'b0),
+        .trap_taken_out()
     );
 
     cpu_top #(

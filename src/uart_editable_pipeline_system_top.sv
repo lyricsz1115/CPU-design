@@ -6,7 +6,7 @@ module uart_editable_pipeline_system_top #(
 ) (
     input  logic       clk,
     input  logic       rst_btn,
-    input  logic [7:0] sw,
+    input  logic [8:0] sw,
     input  logic       btn_write,
     input  logic       btn_next,
     input  logic       btn_clear,
@@ -98,6 +98,28 @@ module uart_editable_pipeline_system_top #(
     logic [31:0] bus_read_data;
     logic [31:0] bus_debug_dmem0;
     logic [7:0] bus_led;
+    // ── Trap timer MMIO ──
+    logic        mtimecmp_mmio_write;
+    logic [31:0] mtimecmp_mmio_wdata;
+    logic [31:0] mtime_mmio_val;
+    logic [31:0] mtimecmp_mmio_val;
+    // ── Trap / interrupt ──
+    logic        trap_taken;
+    logic        irq_external;
+    logic        irq_external_latched;
+    // ── Button synchronizer + debounce for btn_next ──
+    logic [1:0]  btn_sync;
+    logic [19:0] btn_db_cnt;
+    logic        btn_db;
+    logic        btn_db_d;
+    wire         btn_db_posedge = btn_db && !btn_db_d;
+    // ── Debug single-step ──
+    wire         debug_mode = sw[8];
+    logic        debug_frozen;
+    logic        trap_taken_d;
+    wire         trap_taken_posedge = trap_taken && !trap_taken_d;
+    wire         debug_stall = debug_mode && run_mode &&
+                                (trap_taken || debug_frozen) && !btn_db_posedge;
     logic [1:0] display_mode;
     logic btn_display_meta;
     logic btn_display_sync;
@@ -105,6 +127,7 @@ module uart_editable_pipeline_system_top #(
     logic btn_display_state_d;
     logic [19:0] display_debounce_count;
     logic [24:0] blink_count;
+    logic [7:0]  run_display;
     logic [31:0] seg_display_value;
 
     wire cpu_rst = rst_btn | ~run_mode;
@@ -115,15 +138,15 @@ module uart_editable_pipeline_system_top #(
         received_words[3:0]
     };
     wire [7:0] manual_load_addr_display = {manual_instr_index[3:0], manual_byte_index, 2'b00};
-    wire [7:0] manual_load_display = blink_count[24] ? sw : manual_load_addr_display;
+    wire [7:0] manual_load_display = blink_count[24] ? sw[7:0] : manual_load_addr_display;
     wire manual_loader_active = (manual_instr_index != 8'd0) ||
                                 (manual_byte_index != 2'd0) ||
                                 (manual_current_word != 32'd0) ||
                                 manual_imem_write_enable;
     wire [7:0] load_display = manual_loader_active ? manual_load_display : uart_load_display;
-    wire [7:0] run_display = (bus_led != 8'd0) ? bus_led :
-                             ((cpu_debug_dmem0[7:0] != 8'd0) ? cpu_debug_dmem0[7:0] :
-                              {1'b1, debug_pc[6:0]});
+    wire [7:0] result_display = (bus_led != 8'd0) ? bus_led :
+                                 ((cpu_debug_dmem0[7:0] != 8'd0) ? cpu_debug_dmem0[7:0] :
+                                  {1'b1, debug_pc[6:0]});
     wire display_mode_pulse = btn_display_state & ~btn_display_state_d;
     wire uart_loader_stop_request = packet_valid &&
                                     ((request_command == 8'h01) ||
@@ -138,6 +161,72 @@ module uart_editable_pipeline_system_top #(
                                                    manual_imem_write_addr;
     assign imem_write_data = uart_imem_write_enable ? uart_imem_write_data :
                                                    manual_imem_write_data;
+
+    // ════════════════════════════════════════════════════════════════
+    // External interrupt: debounced btn_next rising edge in run mode
+    // ════════════════════════════════════════════════════════════════
+    always_ff @(posedge clk or posedge rst_btn) begin
+        if (rst_btn) begin
+            irq_external_latched <= 1'b0;
+        end else begin
+            if (run_mode && !debug_mode && btn_db_posedge)
+                irq_external_latched <= 1'b1;
+            else if (!run_mode)
+                irq_external_latched <= 1'b0;
+        end
+    end
+    assign irq_external = irq_external_latched;
+
+    // ════════════════════════════════════════════════════════════════
+    // Button synchronizer + debounce state machine
+    // ════════════════════════════════════════════════════════════════
+    always_ff @(posedge clk or posedge rst_btn) begin
+        if (rst_btn) begin
+            btn_sync   <= 2'b0;
+            btn_db_cnt <= 20'b0;
+            btn_db     <= 1'b0;
+            btn_db_d   <= 1'b0;
+        end else begin
+            // 2-FF synchronizer
+            btn_sync <= {btn_sync[0], btn_next};
+            // Debounce: when synced output differs from stable value, count up.
+            // On saturation (~10 ms @ 100 MHz) accept the new level and reset.
+            if (btn_sync[1] != btn_db) begin
+                if (btn_db_cnt == 20'd1_000_000) begin
+                    btn_db     <= btn_sync[1];
+                    btn_db_cnt <= 20'b0;
+                end else begin
+                    btn_db_cnt <= btn_db_cnt + 20'd1;
+                end
+            end else begin
+                btn_db_cnt <= 20'b0;
+            end
+            // Edge detection on debounced signal
+            btn_db_d <= btn_db;
+        end
+    end
+
+    // ════════════════════════════════════════════════════════════════
+    // Debug single-step state machine (sw[8] = 1)
+    //
+    // debug_frozen latches on trap_taken rising edge.
+    // debug_stall is combinatorial (trap_taken || debug_frozen) —
+    // this freezes the pipeline in the SAME cycle trap_taken fires.
+    // btn_db_posedge temporarily releases stall for 1 clock cycle.
+    // ════════════════════════════════════════════════════════════════
+    always_ff @(posedge clk or posedge rst_btn) begin
+        if (rst_btn) begin
+            debug_frozen <= 1'b0;
+            trap_taken_d <= 1'b0;
+        end else if (!debug_mode || !run_mode) begin
+            debug_frozen <= 1'b0;
+            trap_taken_d <= trap_taken;
+        end else begin
+            trap_taken_d <= trap_taken;
+            if (trap_taken_posedge)
+                debug_frozen <= 1'b1;
+        end
+    end
 
     uart_rx_byte #(
         .CLK_HZ(UART_CLK_HZ),
@@ -200,7 +289,7 @@ module uart_editable_pipeline_system_top #(
     ) u_manual_loader (
         .clk(clk),
         .rst(rst_btn),
-        .sw(sw),
+        .sw(sw[7:0]),
         .btn_write(btn_write),
         .btn_next(btn_next),
         .btn_clear(btn_clear),
@@ -236,15 +325,18 @@ module uart_editable_pipeline_system_top #(
         .USE_INIT_FILE(0),
         .PROGRAM_ID(255),
         .ENABLE_IMEM_WRITE(1),
-        .USE_EXTERNAL_DATA_BUS(1)
+        .USE_EXTERNAL_DATA_BUS(1),
+        .ENABLE_DATA_CACHE(1),
+        .CACHE_NUM_SETS(8),
+        .CACHE_WORDS_PER_LINE(4)
     ) u_cpu (
         .clk(clk),
         .rst(cpu_rst),
         .imem_write_enable(imem_write_enable),
         .imem_write_addr(imem_write_addr),
         .imem_write_data(imem_write_data),
-        .debug_imem_index(sw),
-        .debug_dmem_index(sw),
+        .debug_imem_index(sw[7:0]),
+        .debug_dmem_index(sw[7:0]),
         .debug_reg_index(sw[4:0]),
         .external_read_data(bus_read_data),
         .external_mem_read(bus_mem_read),
@@ -267,7 +359,14 @@ module uart_editable_pipeline_system_top #(
         .debug_dmem1(cpu_debug_dmem1),
         .debug_dmem_data(debug_dmem_data),
         .debug_imem_data(debug_imem_data),
-        .debug_reg_data(debug_reg_data)
+        .debug_reg_data(debug_reg_data),
+        .mtimecmp_mmio_write(mtimecmp_mmio_write),
+        .mtimecmp_mmio_wdata(mtimecmp_mmio_wdata),
+        .mtime_mmio_val(mtime_mmio_val),
+        .mtimecmp_mmio_val(mtimecmp_mmio_val),
+        .irq_external(irq_external),
+        .debug_stall(debug_stall),
+        .trap_taken_out(trap_taken)
     );
 
     io_bus u_io_bus (
@@ -277,16 +376,21 @@ module uart_editable_pipeline_system_top #(
         .mem_write(bus_mem_write),
         .addr(bus_addr),
         .write_data(bus_write_data),
-        .sw(sw),
+        .sw(sw[7:0]),
         .cycle_count(debug_cycle_count),
         .instret_count(debug_instret_count),
         .stall_count(debug_stall_count),
         .flush_count(debug_flush_count),
-        .debug_index(sw),
+        .debug_index(sw[7:0]),
         .read_data(bus_read_data),
         .debug_dmem0(bus_debug_dmem0),
         .debug_data(),
-        .led(bus_led)
+        .led(bus_led),
+        .mtimecmp_write(mtimecmp_mmio_write),
+        .mtimecmp_wdata(mtimecmp_mmio_wdata),
+        .mtime_val(mtime_mmio_val),
+        .mtimecmp_val(mtimecmp_mmio_val),
+        .irq_external(irq_external)
     );
 
     seg7_hex_display u_seg7_display (
@@ -356,7 +460,9 @@ module uart_editable_pipeline_system_top #(
     end
 
     always_comb begin
-        case (display_mode)
+        if (debug_mode)
+            seg_display_value = debug_pc;           // debug mode: show PC
+        else case (display_mode)
             DISPLAY_IMEM: seg_display_value = debug_imem_data;
             DISPLAY_DMEM: seg_display_value = debug_dmem_data;
             DISPLAY_REG:  seg_display_value = debug_reg_data;
@@ -364,9 +470,19 @@ module uart_editable_pipeline_system_top #(
         endcase
     end
 
-    assign mode_led_imem = (display_mode == DISPLAY_IMEM);
-    assign mode_led_dmem = (display_mode == DISPLAY_DMEM);
-    assign mode_led_reg = (display_mode == DISPLAY_REG);
+    always_comb begin
+        case (sw[7:6])
+            2'b00:   run_display = result_display;
+            2'b01:   run_display = debug_cache_access_count[7:0];
+            2'b10:   run_display = debug_cache_hit_count[7:0];
+            2'b11:   run_display = debug_cache_miss_count[7:0];
+            default: run_display = result_display;
+        endcase
+    end
+
+    assign mode_led_imem = debug_mode ? 1'b0 : (display_mode == DISPLAY_IMEM);
+    assign mode_led_dmem = debug_mode ? 1'b0 : (display_mode == DISPLAY_DMEM);
+    assign mode_led_reg  = debug_mode ? 1'b0 : (display_mode == DISPLAY_REG);
 
     always_ff @(posedge clk) begin
         if (rst_btn) begin

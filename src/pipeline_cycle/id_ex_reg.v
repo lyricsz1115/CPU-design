@@ -9,6 +9,7 @@ module id_ex_reg(
     input wire mem_write_in,
     input wire branch_in,
     input wire jal_in,
+    input wire is_system_in,
     input wire alu_src_in,
     input wire alu_a_zero_in,
     input wire [1:0] alu_op_in,
@@ -29,6 +30,7 @@ module id_ex_reg(
     output reg mem_write_out,
     output reg branch_out,
     output reg jal_out,
+    output reg is_system_out,
     output reg alu_src_out,
     output reg alu_a_zero_out,
     output reg [1:0] alu_op_out,
@@ -52,6 +54,7 @@ module id_ex_reg(
             mem_write_out <= 1'b0;
             branch_out <= 1'b0;
             jal_out <= 1'b0;
+            is_system_out <= 1'b0;
             alu_src_out <= 1'b0;
             alu_a_zero_out <= 1'b0;
             alu_op_out <= 2'b00;
@@ -73,6 +76,7 @@ module id_ex_reg(
             mem_write_out <= mem_write_in;
             branch_out <= branch_in;
             jal_out <= jal_in;
+            is_system_out <= is_system_in;
             alu_src_out <= alu_src_in;
             alu_a_zero_out <= alu_a_zero_in;
             alu_op_out <= alu_op_in;

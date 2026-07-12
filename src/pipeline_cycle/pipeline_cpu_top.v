@@ -22,6 +22,16 @@ module pipeline_cpu_top #(
     output wire external_mem_write,
     output wire [31:0] external_addr,
     output wire [31:0] external_write_data,
+    // ── Trap timer MMIO (connected to io_bus via top-level) ──
+    input  wire        mtimecmp_mmio_write,
+    input  wire [31:0] mtimecmp_mmio_wdata,
+    output wire [31:0] mtime_mmio_val,
+    output wire [31:0] mtimecmp_mmio_val,
+    // ── External interrupt ──
+    input  wire        irq_external,
+    // ── Debug single-step ──
+    input  wire        debug_stall,       // freeze pipeline (from top-level sw[8])
+    output wire        trap_taken_out,    // trap_taken exposed to top-level for auto-break
     output wire stall_debug,
     output wire flush_debug,
     output wire predict_taken_debug,
@@ -56,6 +66,7 @@ module pipeline_cpu_top #(
     wire [6:0] id_funct7;
     wire id_branch;
     wire id_jal;
+    wire id_is_system;
     wire id_mem_read;
     wire id_mem_to_reg;
     wire [1:0] id_alu_op;
@@ -107,6 +118,25 @@ module pipeline_cpu_top #(
     wire ex_mispredict;
     wire ex_is_div;
     wire ex_div_done;
+    wire [31:0] ex_div_result;
+    wire ex_is_system;
+    wire ex_is_mret;
+    wire ex_is_ecall;
+    wire ex_is_csr;
+    wire [11:0] ex_csr_addr;
+    wire [31:0] ex_csr_wdata;      // rs1 value (or uimm) for CSR writes
+    wire [31:0] csr_rdata;         // CSR read data → ex_result
+    // trap control
+    wire trap_taken;
+    wire shadow_restore;
+    wire [31:0] trap_target;
+    wire [31:0] sh_ra, sh_sp, sh_t0, sh_t1, sh_t2;
+    wire [31:0] mepc_val;
+    // trap timer MMIO
+    wire        mtimecmp_write;
+    wire [31:0] mtimecmp_wdata;
+    wire [31:0] mtime_val;
+    wire [31:0] mtimecmp_val;
     wire [31:0] ex_div_result;
     reg  div_active;
     reg  div_result_valid;
@@ -199,8 +229,21 @@ module pipeline_cpu_top #(
         ((ex_pc_src != ex_pred_taken) |
         (ex_pc_src & ex_pred_taken & (ex_branch_target != ex_pred_target)));
     assign correct_pc = ex_pc_src ? ex_branch_target : ex_pc_plus4;
-    assign next_pc = ex_mispredict ? correct_pc :
-                     id_predict_redirect ? id_pred_target : pc_plus4_if;
+    wire ex_mret_taken;              // MRET in EX stage → redirect PC + flush IF/ID
+    // PC selection priority: trap > mret(EX) > mret(MEM fallback) > mispredict > predict-redirect > sequential
+    assign next_pc = trap_taken         ? trap_target :
+                     ex_mret_taken      ? mepc_val :
+                     shadow_restore     ? mepc_val :
+                     ex_mispredict      ? correct_pc :
+                     id_predict_redirect? id_pred_target :
+                                          pc_plus4_if;
+
+    assign ex_mret_taken = ex_is_mret && id_ex_valid && !id_ex_flush;
+    // MRET must NOT flush ID/EX — the instruction must flow EX→MEM→WB
+    // so that shadow_restore fires and MIE/shadow regs are restored.
+    // Only IF/ID is flushed (via if_id_flush below) to kill the instruction
+    // that follows MRET.
+    wire id_ex_flush_reg = id_ex_flush;
 
     // --- multi-cycle division control ---
     assign ex_is_div   = id_ex_valid &&
@@ -211,15 +254,16 @@ module pipeline_cpu_top #(
     assign div_start   = ex_is_div && !div_active && !div_result_valid && !ex_div_done;
     assign div_stall   = ex_is_div && !div_result_valid && !ex_div_done;
     assign front_stall = div_stall | cache_stall;
-    assign id_ex_en    = ~front_stall;
+    assign id_ex_en    = ~front_stall & ~debug_stall;
     // BUG #5 fix: Freeze EX/MEM during div_stall instead of flushing.
     // The old ex_mem_flush=div_stall cleared EX/MEM on the same clock edge
     // that io_bus was sampling the write-enable for the previous SW in MEM,
     // causing a race that lost the write to dmem.
-    assign ex_mem_en   = ~cache_stall & ~div_stall;
+    assign ex_mem_en   = ~cache_stall & ~div_stall & ~debug_stall;
     assign ex_mem_flush = 1'b0;
-    assign ex_result   = ex_is_div ?
-                         (div_result_valid ? div_result_latched : ex_div_result) :
+    // EX result: division > CSR read > ALU
+    assign ex_result   = ex_is_div  ? (div_result_valid ? div_result_latched : ex_div_result) :
+                         ex_is_csr  ? csr_rdata :
                          ex_alu_result;
 
     always @(posedge clk or posedge rst) begin
@@ -270,30 +314,32 @@ module pipeline_cpu_top #(
     end
 
     decoder u_decoder(.inst(if_id_inst), .opcode(id_opcode), .rd(id_rd), .funct3(id_funct3), .rs1(id_rs1), .rs2(id_rs2), .funct7(id_funct7));
-    control u_control(.opcode(id_opcode), .branch(id_branch), .jal(id_jal), .mem_read(id_mem_read), .mem_to_reg(id_mem_to_reg), .alu_op(id_alu_op), .mem_write(id_mem_write), .alu_src(id_alu_src), .alu_a_zero(id_alu_a_zero), .reg_write(id_reg_write));
+    control u_control(.opcode(id_opcode), .branch(id_branch), .jal(id_jal), .mem_read(id_mem_read), .mem_to_reg(id_mem_to_reg), .alu_op(id_alu_op), .mem_write(id_mem_write), .alu_src(id_alu_src), .alu_a_zero(id_alu_a_zero), .reg_write(id_reg_write), .is_system(id_is_system));
     imm_gen u_imm_gen(.inst(if_id_inst), .imm(id_imm));
+    wire [31:0] reg_x1, reg_x2, reg_x5, reg_x6, reg_x7;  // for trap shadow capture
     assign wb_commit_write = wb_reg_write && mem_wb_valid;
-    regfile u_regfile(.clk(clk), .rst(rst), .reg_write(wb_commit_write), .rs1(id_rs1), .rs2(id_rs2), .rd(wb_rd), .write_data(wb_data), .debug_index(debug_reg_index), .read_data1(id_reg_data1), .read_data2(id_reg_data2), .debug_data(debug_reg_data));
+    regfile u_regfile(.clk(clk), .rst(rst), .reg_write(wb_commit_write), .rs1(id_rs1), .rs2(id_rs2), .rd(wb_rd), .write_data(wb_data), .debug_index(debug_reg_index), .read_data1(id_reg_data1), .read_data2(id_reg_data2), .debug_data(debug_reg_data), .shadow_restore(shadow_restore), .sh_ra(sh_ra), .sh_sp(sh_sp), .sh_t0(sh_t0), .sh_t1(sh_t1), .sh_t2(sh_t2), .x1_val(reg_x1), .x2_val(reg_x2), .x5_val(reg_x5), .x6_val(reg_x6), .x7_val(reg_x7));
     assign id_reg_data1_bypass = (wb_commit_write && wb_rd != 5'b0 && wb_rd == id_rs1) ? wb_data : id_reg_data1;
     assign id_reg_data2_bypass = (wb_commit_write && wb_rd != 5'b0 && wb_rd == id_rs2) ? wb_data : id_reg_data2;
 
     hazard_unit u_hazard(
         .id_ex_mem_read(ex_mem_read), .id_ex_rd(ex_rd), .if_id_rs1(id_rs1), .if_id_rs2(id_rs2),
-        .pc_src(ex_mispredict), .ex_stall(front_stall),
+        .pc_src(ex_mispredict), .ex_stall(front_stall), .trap_taken(trap_taken),
+        .debug_stall(debug_stall),   // debug single-step
         .pc_write(pc_write), .if_id_write(if_id_write), .if_id_flush(hazard_if_id_flush), .id_ex_flush(id_ex_flush)
     );
-    assign if_id_flush = hazard_if_id_flush | id_predict_redirect;
+    assign if_id_flush = hazard_if_id_flush | id_predict_redirect | ex_mret_taken;
     assign load_use_stall = ~pc_write && !front_stall;
 
     id_ex_reg u_id_ex(
-        .clk(clk), .rst(rst), .en(id_ex_en), .flush(id_ex_flush),
+        .clk(clk), .rst(rst), .en(id_ex_en), .flush(id_ex_flush_reg),
         .reg_write_in(id_reg_write), .mem_to_reg_in(id_mem_to_reg), .mem_read_in(id_mem_read), .mem_write_in(id_mem_write),
-        .branch_in(id_branch), .jal_in(id_jal), .alu_src_in(id_alu_src), .alu_a_zero_in(id_alu_a_zero), .alu_op_in(id_alu_op),
+        .branch_in(id_branch), .jal_in(id_jal), .is_system_in(id_is_system), .alu_src_in(id_alu_src), .alu_a_zero_in(id_alu_a_zero), .alu_op_in(id_alu_op),
         .pc_in(if_id_pc), .reg_data1_in(id_reg_data1_bypass), .reg_data2_in(id_reg_data2_bypass), .imm_in(id_imm),
         .pred_taken_in(id_pred_taken), .pred_target_in(id_pred_target),
         .rs1_in(id_rs1), .rs2_in(id_rs2), .rd_in(id_rd), .funct3_in(id_funct3), .funct7_in(id_funct7),
         .reg_write_out(ex_reg_write), .mem_to_reg_out(ex_mem_to_reg), .mem_read_out(ex_mem_read), .mem_write_out(ex_mem_write),
-        .branch_out(ex_branch), .jal_out(ex_jal), .alu_src_out(ex_alu_src), .alu_a_zero_out(ex_alu_a_zero), .alu_op_out(ex_alu_op),
+        .branch_out(ex_branch), .jal_out(ex_jal), .is_system_out(ex_is_system), .alu_src_out(ex_alu_src), .alu_a_zero_out(ex_alu_a_zero), .alu_op_out(ex_alu_op),
         .pc_out(ex_pc), .reg_data1_out(ex_reg_data1), .reg_data2_out(ex_reg_data2), .imm_out(ex_imm),
         .pred_taken_out(ex_pred_taken), .pred_target_out(ex_pred_target),
         .rs1_out(ex_rs1), .rs2_out(ex_rs2), .rd_out(ex_rd), .funct3_out(ex_funct3), .funct7_out(ex_funct7)
@@ -302,7 +348,7 @@ module pipeline_cpu_top #(
     always @(posedge clk or posedge rst) begin
         if (rst) begin
             id_ex_valid <= 1'b0;
-        end else if (id_ex_flush) begin
+        end else if (id_ex_flush_reg) begin
             id_ex_valid <= 1'b0;
         end else if (id_ex_en) begin
             id_ex_valid <= if_id_valid;
@@ -320,6 +366,17 @@ module pipeline_cpu_top #(
                             (forward_b == 2'b01) ? wb_data : ex_reg_data2;
 
     alu_control u_alu_control(.alu_op(ex_alu_op), .funct3(ex_funct3), .funct7(ex_funct7), .alu_ctrl(ex_alu_ctrl));
+    // ── SYSTEM instruction decode (EX stage) ──
+    assign ex_is_mret  = ex_is_system && (ex_funct3 == 3'b000) && (ex_funct7 == 7'b0011000) && (ex_rs2 == 5'b00010);
+    assign ex_is_ecall = ex_is_system && (ex_funct3 == 3'b000) && (ex_funct7 == 7'b0000000) && (ex_rs2 == 5'b00000);
+    assign ex_is_csr   = ex_is_system && !ex_is_mret && !ex_is_ecall;
+    assign ex_csr_addr = {ex_funct7, ex_rs2};           // CSR address = funct7 + rs2
+    wire ex_csr_is_imm = ex_is_csr && ex_funct3[2];     // funct3>=4 → immediate form
+    assign ex_csr_wdata = ex_csr_is_imm ? {27'b0, ex_rs1} : ex_alu_a;  // imm: uimm, reg: rs1 value
+    // CSR write enable: skip write for CSRRS/CSRRC with rs1=x0 (read-only CSR access)
+    wire ex_csr_no_write = ((ex_funct3 == 3'b010 || ex_funct3 == 3'b011) && ex_rs1 == 5'd0) ||
+                           ((ex_funct3 == 3'b110 || ex_funct3 == 3'b111) && ex_rs1 == 5'd0);
+    wire ex_csr_write = ex_is_csr && !ex_csr_no_write;
     assign ex_alu_a = ex_alu_a_zero ? 32'b0 : forward_a_data;
     assign ex_alu_b = ex_alu_src ? ex_imm : forward_b_data;
     alu u_alu(.a(ex_alu_a), .b(ex_alu_b), .alu_ctrl(ex_alu_ctrl),
@@ -335,6 +392,28 @@ module pipeline_cpu_top #(
         .dividend(ex_alu_a), .divisor(ex_alu_b),
         .funct3(ex_funct3),
         .result(ex_div_result), .done(ex_div_done)
+    );
+
+    trap_csr_unit u_trap(
+        .clk(clk), .rst(rst),
+        .irq_external(irq_external),       // connected from top-level via editable_pipeline_system_top
+        .reg_x1(reg_x1), .reg_x2(reg_x2), .reg_x5(reg_x5), .reg_x6(reg_x6), .reg_x7(reg_x7),
+        .wb_commit_write(wb_commit_write), .wb_rd(wb_rd), .wb_data(wb_data),
+        .ex_is_csr(ex_is_csr), .ex_is_mret(ex_is_mret), .ex_is_ecall(ex_is_ecall),
+        .ex_csr_addr(ex_csr_addr), .ex_csr_wdata(ex_csr_wdata), .ex_csr_write(ex_csr_write),
+        .ex_csr_funct3(ex_funct3),
+        .csr_rdata(csr_rdata),
+        .id_pc(if_id_pc),
+        .ex_pc(ex_pc),
+        .id_ex_valid(id_ex_valid),
+        .id_ex_flush(id_ex_flush), .ex_mem_valid(ex_mem_valid),
+        .ex_mem_flush(ex_mem_flush), .mem_wb_valid(mem_wb_valid),
+        .trap_taken(trap_taken), .trap_target(trap_target),
+        .shadow_restore(shadow_restore),
+        .sh_ra(sh_ra), .sh_sp(sh_sp), .sh_t0(sh_t0), .sh_t1(sh_t1), .sh_t2(sh_t2),
+        .mepc_val(mepc_val),
+        .io_mtimecmp_write(mtimecmp_write), .io_mtimecmp_wdata(mtimecmp_wdata),
+        .io_mtime_val(mtime_val), .io_mtimecmp_val(mtimecmp_val)
     );
 
     ex_mem_reg u_ex_mem(
@@ -493,10 +572,16 @@ module pipeline_cpu_top #(
     assign external_mem_write = external_bus_selected ? storage_mem_write : 1'b0;
     assign external_addr = storage_addr;
     assign external_write_data = storage_write_data;
+    // ── Trap timer MMIO pass-through ──
+    assign mtime_mmio_val    = mtime_val;
+    assign mtimecmp_mmio_val = mtimecmp_val;
+    assign mtimecmp_write    = mtimecmp_mmio_write;
+    assign mtimecmp_wdata    = mtimecmp_mmio_wdata;
     assign debug_cache_access_count = ENABLE_DATA_CACHE ? cache_access_count : 32'b0;
     assign debug_cache_hit_count = ENABLE_DATA_CACHE ? cache_hit_count : 32'b0;
     assign debug_cache_miss_count = ENABLE_DATA_CACHE ? cache_miss_count : 32'b0;
     assign debug_pc = pc_value;
     assign debug_dmem0 = u_dmem.mem[0];
     assign debug_dmem1 = u_dmem.mem[1];
+    assign trap_taken_out = trap_taken;
 endmodule

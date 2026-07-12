@@ -73,7 +73,12 @@ module cached_pipeline_minisys_top #(
         .debug_dmem1(cpu_debug_dmem1),
         .debug_dmem_data(cpu_debug_dmem_data),
         .debug_imem_data(debug_imem_data),
-        .debug_reg_data(debug_reg_data)
+        .debug_reg_data(debug_reg_data),
+        .mtimecmp_mmio_write(1'b0),
+        .mtimecmp_mmio_wdata(32'b0),
+        .mtime_mmio_val(),
+        .mtimecmp_mmio_val(),
+        .irq_external(1'b0)
     );
 
     io_bus u_io_bus (
@@ -92,7 +97,12 @@ module cached_pipeline_minisys_top #(
         .read_data(bus_read_data),
         .debug_dmem0(bus_debug_dmem0),
         .debug_data(),
-        .led(bus_led)
+        .led(bus_led),
+        .mtimecmp_write(),
+        .mtimecmp_wdata(),
+        .mtime_val(32'b0),
+        .mtimecmp_val(32'b0),
+        .irq_external(1'b0)
     );
 
     always @(*) begin

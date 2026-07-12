@@ -83,7 +83,14 @@ module tb_pipeline;
         .debug_dmem1(nop_dmem1),
         .debug_dmem_data(),
         .debug_imem_data(),
-        .debug_reg_data()
+        .debug_reg_data(),
+        .mtimecmp_mmio_write(1'b0),
+        .mtimecmp_mmio_wdata(32'b0),
+        .mtime_mmio_val(),
+        .mtimecmp_mmio_val(),
+        .irq_external(1'b0),
+        .debug_stall(1'b0),
+        .trap_taken_out()
     );
 
     pipeline_cpu_top #(.INIT_FILE("hazard.mem")) dut_hazard(
@@ -104,7 +111,14 @@ module tb_pipeline;
         .debug_dmem1(hazard_dmem1),
         .debug_dmem_data(),
         .debug_imem_data(),
-        .debug_reg_data()
+        .debug_reg_data(),
+        .mtimecmp_mmio_write(1'b0),
+        .mtimecmp_mmio_wdata(32'b0),
+        .mtime_mmio_val(),
+        .mtimecmp_mmio_val(),
+        .irq_external(1'b0),
+        .debug_stall(1'b0),
+        .trap_taken_out()
     );
 
     pipeline_cpu_top #(.INIT_FILE("load_use.mem")) dut_load(
@@ -125,7 +139,14 @@ module tb_pipeline;
         .debug_dmem1(load_dmem1),
         .debug_dmem_data(),
         .debug_imem_data(),
-        .debug_reg_data()
+        .debug_reg_data(),
+        .mtimecmp_mmio_write(1'b0),
+        .mtimecmp_mmio_wdata(32'b0),
+        .mtime_mmio_val(),
+        .mtimecmp_mmio_val(),
+        .irq_external(1'b0),
+        .debug_stall(1'b0),
+        .trap_taken_out()
     );
 
     pipeline_cpu_top #(.INIT_FILE("branch.mem")) dut_branch(
@@ -147,7 +168,14 @@ module tb_pipeline;
         .debug_dmem1(branch_dmem1),
         .debug_dmem_data(),
         .debug_imem_data(),
-        .debug_reg_data()
+        .debug_reg_data(),
+        .mtimecmp_mmio_write(1'b0),
+        .mtimecmp_mmio_wdata(32'b0),
+        .mtime_mmio_val(),
+        .mtimecmp_mmio_val(),
+        .irq_external(1'b0),
+        .debug_stall(1'b0),
+        .trap_taken_out()
     );
 
     pipeline_cpu_top #(.INIT_FILE("branch_predict.mem")) dut_pred(
@@ -169,7 +197,14 @@ module tb_pipeline;
         .debug_dmem1(pred_dmem1),
         .debug_dmem_data(),
         .debug_imem_data(),
-        .debug_reg_data()
+        .debug_reg_data(),
+        .mtimecmp_mmio_write(1'b0),
+        .mtimecmp_mmio_wdata(32'b0),
+        .mtime_mmio_val(),
+        .mtimecmp_mmio_val(),
+        .irq_external(1'b0),
+        .debug_stall(1'b0),
+        .trap_taken_out()
     );
 
     initial begin

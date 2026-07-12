@@ -32,6 +32,23 @@
 `define ALU_REMU     4'b1110
 `define ALU_NOP      4'b1111
 
+// ── SYSTEM opcode (CSR / ECALL / MRET) ──
+`define OPCODE_SYSTEM  7'b1110011
+
+// ── CSR addresses ──
+`define CSR_MSTATUS  12'h300
+`define CSR_MTVEC    12'h305
+`define CSR_MEPC     12'h341
+`define CSR_MCAUSE   12'h342
+`define CSR_MIE      12'h304
+`define CSR_MIP      12'h344
+
+// ── mcause encodings ──
+`define MCAUSE_MTIP   32'h80000007
+`define MCAUSE_MEIP   32'h8000000B
+`define MCAUSE_MSIP   32'h80000003
+`define MCAUSE_ECALL  32'h0000000B
+
 // M-extension funct7 marker (bit0 distinguishes from base RV32I)
 `define FUNCT7_MEXT  7'b0000001
 

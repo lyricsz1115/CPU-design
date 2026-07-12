@@ -14,7 +14,14 @@ module io_bus(
     output reg [31:0] read_data,
     output wire [31:0] debug_dmem0,
     output wire [31:0] debug_data,
-    output wire [7:0] led
+    output wire [7:0] led,
+    // ── Trap timer MMIO ──
+    output reg         mtimecmp_write,
+    output reg  [31:0] mtimecmp_wdata,
+    input  wire [31:0] mtime_val,
+    input  wire [31:0] mtimecmp_val,
+    // ── External interrupt button ──
+    input  wire        irq_external
 );
     localparam IO_LED_ADDR      = 32'h1000_0000;
     localparam IO_SW_ADDR       = 32'h1000_0004;
@@ -22,6 +29,9 @@ module io_bus(
     localparam IO_INSTRET_ADDR  = 32'h1000_0014;
     localparam IO_STALL_ADDR    = 32'h1000_0018;
     localparam IO_FLUSH_ADDR    = 32'h1000_001c;
+    localparam IO_MTIME_ADDR    = 32'h1000_0100;
+    localparam IO_MTIMECMP_ADDR = 32'h1000_0104;
+    localparam IO_INT_BTN_ADDR  = 32'h1000_0108;
 
     reg [7:0] led_reg;
 
@@ -38,6 +48,9 @@ module io_bus(
                 IO_INSTRET_ADDR: read_data = instret_count;
                 IO_STALL_ADDR:   read_data = stall_count;
                 IO_FLUSH_ADDR:   read_data = flush_count;
+                IO_MTIME_ADDR:   read_data = mtime_val;
+                IO_MTIMECMP_ADDR:read_data = mtimecmp_val;
+                IO_INT_BTN_ADDR: read_data = {31'b0, irq_external};
                 default:         read_data = 32'b0;
             endcase
         end else begin
@@ -48,9 +61,17 @@ module io_bus(
     always @(posedge clk or posedge rst) begin
         if (rst) begin
             led_reg <= 8'b0;
-        end else if (mem_write) begin
-            if (addr == IO_LED_ADDR) begin
-                led_reg <= write_data[7:0];
+            mtimecmp_write <= 1'b0;
+            mtimecmp_wdata <= 32'b0;
+        end else begin
+            mtimecmp_write <= 1'b0;   // default: no write
+            if (mem_write) begin
+                if (addr == IO_LED_ADDR) begin
+                    led_reg <= write_data[7:0];
+                end else if (addr == IO_MTIMECMP_ADDR) begin
+                    mtimecmp_write <= 1'b1;
+                    mtimecmp_wdata <= write_data;
+                end
             end
         end
     end

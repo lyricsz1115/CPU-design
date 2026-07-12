@@ -10,7 +10,8 @@ module control(
     output reg mem_write,
     output reg alu_src,
     output reg alu_a_zero,
-    output reg reg_write
+    output reg reg_write,
+    output reg is_system      // SYSTEM opcode (CSR / ECALL / MRET)
 );
     always @(*) begin
         branch = 1'b0;
@@ -22,6 +23,7 @@ module control(
         alu_src = 1'b0;
         alu_a_zero = 1'b0;//表示 ALU 的第一个操作数是否为 0，主要用于 LUI 指令
         reg_write = 1'b0;
+        is_system = 1'b0;
 
         case (opcode)
             `OPCODE_RTYPE: begin
@@ -56,6 +58,11 @@ module control(
                 alu_a_zero = 1'b1;
                 alu_op = 2'b00;
                 reg_write = 1'b1;
+            end
+            `OPCODE_SYSTEM: begin
+                is_system = 1'b1;
+                alu_src   = 1'b1;     // CSR imm forms use rs1 field as uimm
+                reg_write = 1'b1;     // CSR read writes rd (MRET/ECALL handled by trap unit)
             end
         endcase
     end
