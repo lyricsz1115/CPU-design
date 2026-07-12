@@ -196,7 +196,11 @@ module pipeline_cpu_top #(
                      id_predict_redirect ? id_pred_target : pc_plus4_if;
 
     // --- multi-cycle division control ---
-    assign ex_is_div   = id_ex_valid && (ex_alu_ctrl == `ALU_DIV);
+    assign ex_is_div   = id_ex_valid &&
+        ((ex_alu_ctrl == `ALU_DIV)  ||
+         (ex_alu_ctrl == `ALU_DIVU) ||
+         (ex_alu_ctrl == `ALU_REM)  ||
+         (ex_alu_ctrl == `ALU_REMU));
     assign div_start   = ex_is_div && !div_active && !div_result_valid && !ex_div_done;
     assign div_stall   = ex_is_div && !div_result_valid && !ex_div_done;
     assign front_stall = div_stall | cache_stall;
