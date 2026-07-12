@@ -47,13 +47,14 @@ module editable_pipeline_system_top #(
     wire [7:0] bus_led;
 
     reg [24:0] blink_count;
+    reg [7:0] run_display;
 
     wire cpu_rst = rst_btn | ~run_mode;
     wire [7:0] load_addr_display = {instr_index[3:0], byte_index, 2'b00};
     wire [7:0] load_display = blink_count[24] ? sw : load_addr_display;
-    wire [7:0] run_display = (bus_led != 8'b0) ? bus_led :
-                              ((cpu_debug_dmem0[7:0] != 8'b0) ? cpu_debug_dmem0[7:0] :
-                               {1'b1, debug_pc[6:0]});
+    wire [7:0] result_display = (bus_led != 8'b0) ? bus_led :
+                                 ((cpu_debug_dmem0[7:0] != 8'b0) ? cpu_debug_dmem0[7:0] :
+                                  {1'b1, debug_pc[6:0]});
     wire [31:0] seg_display_value = run_mode ? debug_reg_data : debug_imem_data;
 
     instr_loader #(
@@ -80,7 +81,10 @@ module editable_pipeline_system_top #(
         .USE_INIT_FILE(0),
         .PROGRAM_ID(0),
         .ENABLE_IMEM_WRITE(1),
-        .USE_EXTERNAL_DATA_BUS(1)
+        .USE_EXTERNAL_DATA_BUS(1),
+        .ENABLE_DATA_CACHE(1),
+        .CACHE_NUM_SETS(8),
+        .CACHE_WORDS_PER_LINE(4)
     ) u_cpu (
         .clk(clk),
         .rst(cpu_rst),
@@ -147,6 +151,16 @@ module editable_pipeline_system_top #(
         end else begin
             blink_count <= blink_count + 25'd1;
         end
+    end
+
+    always @(*) begin
+        case (sw[7:6])
+            2'b00: run_display = result_display;
+            2'b01: run_display = debug_cache_access_count[7:0];
+            2'b10: run_display = debug_cache_hit_count[7:0];
+            2'b11: run_display = debug_cache_miss_count[7:0];
+            default: run_display = result_display;
+        endcase
     end
 
     assign led = run_mode ? run_display : load_display;
