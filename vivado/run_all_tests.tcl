@@ -55,6 +55,10 @@ set src_files [list \
     [file join $repo_dir src/basic_components/io_bus.v] \
     [file join $repo_dir src/basic_components/pc.v] \
     [file join $repo_dir src/basic_components/regfile.v] \
+    [file join $repo_dir src/basic_components/instr_loader.v] \
+    [file join $repo_dir src/basic_components/seg7_hex_display.v] \
+    [file join $repo_dir src/cache/data_cache.v] \
+    [file join $repo_dir src/cache/cache_memory_adapter.v] \
     [file join $repo_dir src/pipeline_cycle/branch_unit.v] \
     [file join $repo_dir src/pipeline_cycle/ex_mem_reg.v] \
     [file join $repo_dir src/pipeline_cycle/forwarding_unit.v] \
@@ -66,7 +70,13 @@ set src_files [list \
     [file join $repo_dir src/pipeline_cycle/pipeline_cpu_top.v] \
     [file join $repo_dir src/extension_components/div_unit.v] \
     [file join $repo_dir src/extension_components/trap_csr_unit.v] \
-    [file join $repo_dir src/main/cpu_top.v] \
+    [file join $repo_dir src/single_cycle/single_cycle_cpu_top.v] \
+    [file join $repo_dir src/UART/uart_rx_byte.sv] \
+    [file join $repo_dir src/UART/uart_tx_byte.sv] \
+    [file join $repo_dir src/UART/uart_program_packet_rx.sv] \
+    [file join $repo_dir src/UART/uart_program_loader.sv] \
+    [file join $repo_dir src/UART/uart_response_packet_tx.sv] \
+    [file join $repo_dir src/uart_editable_pipeline_system_top.sv] \
 ]
 
 # 检查源文件
@@ -168,6 +178,21 @@ run_sim "tb_trap" \
     [file join $repo_dir tb/tb_trap.v] \
     "Trap: timer IRQ + shadow save/restore + MRET"
 
+# 9. UART packet receiver
+run_sim "tb_uart_program_packet_rx" \
+    [file join $repo_dir tb/tb_uart_program_packet_rx.sv] \
+    "UART packet receiver: framing/CRC/timeout"
+
+# 10. UART program loader
+run_sim "tb_uart_program_loader" \
+    [file join $repo_dir tb/tb_uart_program_loader.sv] \
+    "UART loader: IMEM write/run/stop protocol"
+
+# 11. Final UART pipeline integration
+run_sim "tb_uart_pipeline_system" \
+    [file join $repo_dir tb/tb_uart_pipeline_system.sv] \
+    "Final UART top: loader + pipeline + display integration"
+
 # ─── 仿真结果汇总 ──────────────────────────────────────────────────────────
 log_section "Simulation Results Summary"
 
@@ -189,8 +214,8 @@ if {$SIM_FAIL > 0} {
 # ============================================================================
 log_section "Part 2: Synthesis + Implementation + Timing"
 
-set syn_top "editable_pipeline_system_top"
-set xdc_file [file join $repo_dir xdc/editable_minisys_template.xdc]
+set syn_top "uart_editable_pipeline_system_top"
+set xdc_file [file join $repo_dir xdc/uart_pipeline_system.xdc]
 
 # 综合源文件（不含 testbench）
 set rtl_files [list \
@@ -201,6 +226,8 @@ set rtl_files [list \
     [file join $repo_dir src/basic_components/decoder.v] \
     [file join $repo_dir src/extension_components/div_unit.v] \
     [file join $repo_dir src/extension_components/trap_csr_unit.v] \
+    [file join $repo_dir src/cache/data_cache.v] \
+    [file join $repo_dir src/cache/cache_memory_adapter.v] \
     [file join $repo_dir src/basic_components/dmem.v] \
     [file join $repo_dir src/pipeline_cycle/ex_mem_reg.v] \
     [file join $repo_dir src/pipeline_cycle/forwarding_unit.v] \
@@ -218,6 +245,12 @@ set rtl_files [list \
     [file join $repo_dir src/basic_components/regfile.v] \
     [file join $repo_dir src/basic_components/seg7_hex_display.v] \
     [file join $repo_dir src/editable_pipeline_system_top.v] \
+    [file join $repo_dir src/UART/uart_rx_byte.sv] \
+    [file join $repo_dir src/UART/uart_tx_byte.sv] \
+    [file join $repo_dir src/UART/uart_program_packet_rx.sv] \
+    [file join $repo_dir src/UART/uart_program_loader.sv] \
+    [file join $repo_dir src/UART/uart_response_packet_tx.sv] \
+    [file join $repo_dir src/uart_editable_pipeline_system_top.sv] \
 ]
 
 # 同样有 SystemVerilog 的 uart top
@@ -308,7 +341,7 @@ proc run_synth_impl {top_name top_files extra_rtl} {
 
 # ─── 运行综合 ─────────────────────────────────────────────────────────────
 
-# 1. editable_pipeline_system_top (主顶层)
+# 1. uart_editable_pipeline_system_top (最终统一顶层)
 set syn_result [run_synth_impl $syn_top $rtl_files {}]
 set synth_wns  [lindex $syn_result 0]
 set route_wns  [lindex $syn_result 1]
