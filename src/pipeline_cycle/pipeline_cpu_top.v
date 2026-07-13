@@ -29,6 +29,7 @@ module pipeline_cpu_top #(
     output wire [31:0] mtimecmp_mmio_val,
     // ── External interrupt ──
     input  wire        irq_external,
+    output wire        irq_external_ack,
     // ── Debug single-step ──
     input  wire        debug_stall,       // freeze pipeline (from top-level sw[8])
     output wire        trap_taken_out,    // trap_taken exposed to top-level for auto-break
@@ -396,6 +397,7 @@ module pipeline_cpu_top #(
     trap_csr_unit u_trap(
         .clk(clk), .rst(rst),
         .irq_external(irq_external),       // connected from top-level via editable_pipeline_system_top
+        .irq_external_ack(irq_external_ack),
         .reg_x1(reg_x1), .reg_x2(reg_x2), .reg_x5(reg_x5), .reg_x6(reg_x6), .reg_x7(reg_x7),
         .wb_commit_write(wb_commit_write), .wb_rd(wb_rd), .wb_data(wb_data),
         .ex_is_csr(ex_is_csr), .ex_is_mret(ex_is_mret), .ex_is_ecall(ex_is_ecall),

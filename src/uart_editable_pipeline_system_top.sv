@@ -106,6 +106,7 @@ module uart_editable_pipeline_system_top #(
     // ── Trap / interrupt ──
     logic        trap_taken;
     logic        irq_external;
+    logic        irq_external_ack;
     logic        irq_external_latched;
     // ── Button synchronizer + debounce for btn_next ──
     logic [1:0]  btn_sync;
@@ -169,10 +170,12 @@ module uart_editable_pipeline_system_top #(
         if (rst_btn) begin
             irq_external_latched <= 1'b0;
         end else begin
-            if (run_mode && !debug_mode && btn_db_posedge)
-                irq_external_latched <= 1'b1;
-            else if (!run_mode)
+            if (!run_mode)
                 irq_external_latched <= 1'b0;
+            else if (irq_external_ack)
+                irq_external_latched <= 1'b0;
+            else if (!debug_mode && btn_db_posedge)
+                irq_external_latched <= 1'b1;
         end
     end
     assign irq_external = irq_external_latched;
@@ -365,6 +368,7 @@ module uart_editable_pipeline_system_top #(
         .mtime_mmio_val(mtime_mmio_val),
         .mtimecmp_mmio_val(mtimecmp_mmio_val),
         .irq_external(irq_external),
+        .irq_external_ack(irq_external_ack),
         .debug_stall(debug_stall),
         .trap_taken_out(trap_taken)
     );

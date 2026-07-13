@@ -53,6 +53,7 @@ module editable_pipeline_system_top #(
     wire [31:0] mtimecmp_mmio_val;
     wire        trap_taken;
     wire        irq_external;
+    wire        irq_external_ack;
     reg         irq_external_latched;
 
     // ── Button synchronizer + debounce for btn_next ──
@@ -112,10 +113,12 @@ module editable_pipeline_system_top #(
         if (rst_btn) begin
             irq_external_latched <= 1'b0;
         end else begin
-            if (run_mode && !debug_mode && btn_db_posedge)
-                irq_external_latched <= 1'b1;     // latch interrupt on debounced rising edge
-            else if (!run_mode)
+            if (!run_mode)
                 irq_external_latched <= 1'b0;
+            else if (irq_external_ack)
+                irq_external_latched <= 1'b0;
+            else if (!debug_mode && btn_db_posedge)
+                irq_external_latched <= 1'b1;     // hold request until the CPU accepts it
         end
     end
     assign irq_external = irq_external_latched;
@@ -201,6 +204,7 @@ module editable_pipeline_system_top #(
         .mtime_mmio_val(mtime_mmio_val),
         .mtimecmp_mmio_val(mtimecmp_mmio_val),
         .irq_external(irq_external),
+        .irq_external_ack(irq_external_ack),
         .debug_stall(debug_stall),
         .trap_taken_out(trap_taken),
         .stall_debug(stall_debug),

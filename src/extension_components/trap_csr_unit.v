@@ -16,6 +16,7 @@ module trap_csr_unit (
 
     // ── Interrupt sources ──
     input  wire        irq_external,       // MEIP: external button
+    output wire        irq_external_ack,   // pulse when an external IRQ is accepted
 
     // ── Register file snapshot interface ──
     input  wire [31:0] reg_x1,             // x1 (ra) current value
@@ -159,6 +160,8 @@ module trap_csr_unit (
     assign trap_taken   = trap_condition | ecall_taken;
     assign trap_target  = mtvec;
     assign mepc_val     = mepc;
+    assign irq_external_ack = trap_taken && !ecall_taken &&
+                              (cause_encoded == MCAUSE_MEIP);
 
     // ========================================================================
     // Shadow registers — capture x1/x2/x5/x6/x7 at trap_taken

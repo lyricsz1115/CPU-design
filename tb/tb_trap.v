@@ -84,6 +84,7 @@ module tb_trap;
         .mtime_mmio_val(mtime_mmio_val),
         .mtimecmp_mmio_val(mtimecmp_mmio_val),
         .irq_external(1'b0),
+        .irq_external_ack(),
         .debug_stall(1'b0),
         .trap_taken_out(),
         .stall_debug(pipe_stall),
