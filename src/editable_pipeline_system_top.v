@@ -51,6 +51,7 @@ module editable_pipeline_system_top #(
     wire [31:0] mtimecmp_mmio_wdata;
     wire [31:0] mtime_mmio_val;
     wire [31:0] mtimecmp_mmio_val;
+    wire        trap_taken;
     wire        irq_external;
     reg         irq_external_latched;
 

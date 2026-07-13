@@ -137,7 +137,6 @@ module pipeline_cpu_top #(
     wire [31:0] mtimecmp_wdata;
     wire [31:0] mtime_val;
     wire [31:0] mtimecmp_val;
-    wire [31:0] ex_div_result;
     reg  div_active;
     reg  div_result_valid;
     reg  [31:0] div_result_latched;
