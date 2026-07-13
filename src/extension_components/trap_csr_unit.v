@@ -6,7 +6,7 @@
 //   - 5 shadow registers: x1(ra), x2(sp), x5(t0), x6(t1), x7(t2)
 //   - 32-bit mtime counter + mtimecmp comparator → timer interrupt (MTIP)
 //   - Interrupt arbitration: trap_taken = mstatus_MIE & |(mie & mip)
-//   - MRET restore and redirect at one EX-stage commit boundary
+//   - MRET redirects in EX; shadow restore is delayed to align with WB
 //   - Shadow capture receives the newest EX/MEM/WB-visible register values
 // ============================================================================
 
@@ -97,6 +97,7 @@ module trap_csr_unit (
     reg [11:0]  mie;                // interrupt enable (bits 7=MTIE, 11=MEIE, 3=MSIE)
     reg [31:0]  mtimecmp;           // machine timer compare value
     reg [31:0]  mtime;              // machine timer counter
+    reg         mret_restore_pending;
 
     // ── mip: combinatorial reflection of pending interrupts ──
     wire [11:0] mip;
@@ -195,10 +196,21 @@ module trap_csr_unit (
     end
 
     // ========================================================================
-    // MRET restore and PC redirect share one EX-stage commit event.
+    // MRET restore is delayed by one cycle after EX detection.  The ISR may
+    // execute an instruction such as "addi x1, ..." immediately before MRET;
+    // delaying restore makes it coincide with that instruction's WB stage, so
+    // the regfile restore priority keeps the saved shadow value.
     // ========================================================================
-    assign shadow_restore = ex_is_mret && id_ex_valid &&
-                            trap_stage_ready && !id_ex_flush;
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin
+            mret_restore_pending <= 1'b0;
+        end else begin
+            mret_restore_pending <= ex_is_mret && id_ex_valid &&
+                                    trap_stage_ready && !id_ex_flush;
+        end
+    end
+
+    assign shadow_restore = mret_restore_pending;
 
     // ========================================================================
     // CSR read-modify-write data path (combinatorial, used by CSR writes below)

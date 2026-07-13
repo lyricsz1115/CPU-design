@@ -240,9 +240,10 @@ module pipeline_cpu_top #(
                      id_predict_redirect? id_pred_target :
                                           pc_plus4_if;
 
-    assign ex_mret_taken = shadow_restore;
-    // Current MRET still advances through EX/MEM on this edge; the combined
-    // flush converts only the younger ID instruction into a bubble.
+    assign ex_mret_taken = ex_is_mret && id_ex_valid &&
+                           trap_stage_ready && !id_ex_flush;
+    // MRET redirects in EX; shadow_restore is delayed in trap_csr_unit so it
+    // coincides with WB from the instruction immediately before MRET.
     wire id_ex_flush_reg = id_ex_flush | ex_mret_taken;
 
     // --- multi-cycle division control ---

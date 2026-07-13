@@ -72,10 +72,9 @@ module editable_pipeline_system_top #(
     reg         trap_taken_d;             // trap_taken edge detect
     wire        trap_taken_posedge = trap_taken && !trap_taken_d;
 
-    // trap_taken redirects the PC on its active edge. debug_frozen is latched
-    // on that edge and freezes the ISR entry from the following cycle.
-    wire        debug_stall = debug_mode && run_mode &&
-                               debug_frozen && !btn_db_posedge;
+    // In debug mode the CPU is frozen by default. Each debounced S2 press
+    // releases one clock so the PC can be observed step by step.
+    wire        debug_stall = debug_mode && run_mode && !btn_db_posedge;
 
     reg [24:0] blink_count;
     reg [7:0] run_display;
@@ -156,10 +155,8 @@ module editable_pipeline_system_top #(
     // ════════════════════════════════════════════════════════════════
     // Debug single-step state machine (sw[8] = 1)
     //
-    // debug_frozen latches on trap_taken rising edge.
-    // trap_taken first redirects PC to mtvec; debug_frozen then holds the
-    // redirected ISR entry until btn_db_posedge releases one cycle.
-    // btn_db_posedge temporarily releases stall for 1 clock cycle.
+    // trap_taken is still tracked for diagnostics, but it no longer gates the
+    // basic SW8/S2 single-step mode.
     // ════════════════════════════════════════════════════════════════
     always @(posedge clk or posedge rst_btn) begin
         if (rst_btn) begin
