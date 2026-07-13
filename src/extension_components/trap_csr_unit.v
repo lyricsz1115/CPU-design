@@ -6,8 +6,8 @@
 //   - 5 shadow registers: x1(ra), x2(sp), x5(t0), x6(t1), x7(t2)
 //   - 32-bit mtime counter + mtimecmp comparator → timer interrupt (MTIP)
 //   - Interrupt arbitration: trap_taken = mstatus_MIE & |(mie & mip)
-//   - MRET pipeline tracking (4-stage shift register)
-//   - WB conflict resolution: shadow capture checks if WB is writing same reg
+//   - MRET restore and redirect at one EX-stage commit boundary
+//   - Shadow capture receives the newest EX/MEM/WB-visible register values
 // ============================================================================
 
 module trap_csr_unit (
@@ -34,6 +34,8 @@ module trap_csr_unit (
     input  wire        ex_is_csr,          // EX instruction is CSR read/write
     input  wire        ex_is_mret,         // EX instruction is MRET
     input  wire        ex_is_ecall,        // EX instruction is ECALL
+    input  wire        interrupt_accept,   // asynchronous IRQ can enter now
+    input  wire        trap_stage_ready,   // EX trap instruction can commit now
     input  wire [11:0] ex_csr_addr,        // 12-bit CSR address
     input  wire [31:0] ex_csr_wdata,       // write data for CSR (rs1 or uimm)
     input  wire        ex_csr_write,       // 1 = this CSR instruction writes CSR
@@ -45,10 +47,6 @@ module trap_csr_unit (
     input  wire [31:0] ex_pc,              // EX stage PC (for ECALL mepc)
     input  wire        id_ex_valid,
     input  wire        id_ex_flush,
-    input  wire        ex_mem_valid,
-    input  wire        ex_mem_flush,
-    input  wire        mem_wb_valid,
-
     output wire        trap_taken,         // 1-cycle pulse: take trap now
     output wire [31:0] trap_target,        // mtvec value (trap handler address)
     output wire        shadow_restore,     // 1-cycle pulse: restore shadows → regfile
@@ -152,21 +150,22 @@ module trap_csr_unit (
     // ========================================================================
     // ECALL trap detection (from EX stage)
     // ========================================================================
-    wire ecall_taken = ex_is_ecall && id_ex_valid;
+    wire interrupt_taken = trap_condition && interrupt_accept;
+    wire ecall_taken = ex_is_ecall && id_ex_valid && trap_stage_ready;
 
     // ========================================================================
     // trap_taken: asserted when interrupt or ECALL triggers
     // ========================================================================
-    assign trap_taken   = trap_condition | ecall_taken;
+    assign trap_taken   = interrupt_taken | ecall_taken;
     assign trap_target  = mtvec;
     assign mepc_val     = mepc;
-    assign irq_external_ack = trap_taken && !ecall_taken &&
+    assign irq_external_ack = interrupt_taken &&
                               (cause_encoded == MCAUSE_MEIP);
 
     // ========================================================================
-    // Shadow registers — capture x1/x2/x5/x6/x7 at trap_taken
-    // Resolves WB conflict: if WB is writing the same register this cycle,
-    // capture wb_data instead of the (stale) regfile value.
+    // Shadow registers — capture x1/x2/x5/x6/x7 at trap_taken.
+    // The CPU snapshot inputs already include EX/MEM/WB forwarding. Keep the
+    // WB override here as a defensive guarantee for direct unit-level users.
     // ========================================================================
     reg [31:0] sh_ra_r, sh_sp_r, sh_t0_r, sh_t1_r, sh_t2_r;
 
@@ -196,27 +195,10 @@ module trap_csr_unit (
     end
 
     // ========================================================================
-    // MRET pipeline tracking — follow MRET through IF→ID→EX→MEM→WB
-    // shadow_restore fires when MRET reaches MEM stage
+    // MRET restore and PC redirect share one EX-stage commit event.
     // ========================================================================
-    reg [3:0] mret_pipe;   // {in_EX, in_MEM, in_WB, past_WB}
-
-    always @(posedge clk or posedge rst) begin
-        if (rst) begin
-            mret_pipe <= 4'b0;
-        end else begin
-            // Advance MRET tracker through pipeline stages.
-            // A stage's value moves forward only if the stage is valid
-            // and not being flushed (except for IF→ID which uses if_id_valid).
-            mret_pipe[3] <= ex_is_mret && id_ex_valid && !id_ex_flush;  // MRET in EX
-            mret_pipe[2] <= mret_pipe[3] && ex_mem_valid && !ex_mem_flush;  // MRET in MEM
-            mret_pipe[1] <= mret_pipe[2] && mem_wb_valid;                  // MRET in WB
-            mret_pipe[0] <= mret_pipe[1];                                   // past WB
-        end
-    end
-
-    // shadow_restore = MRET confirmed in MEM stage (will not be flushed)
-    assign shadow_restore = mret_pipe[2];
+    assign shadow_restore = ex_is_mret && id_ex_valid &&
+                            trap_stage_ready && !id_ex_flush;
 
     // ========================================================================
     // CSR read-modify-write data path (combinatorial, used by CSR writes below)

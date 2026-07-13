@@ -72,10 +72,10 @@ module editable_pipeline_system_top #(
     reg         trap_taken_d;             // trap_taken edge detect
     wire        trap_taken_posedge = trap_taken && !trap_taken_d;
 
-    // Combinatorial stall: trap_taken freezes pipeline in the SAME cycle,
-    // btn_db_posedge releases for exactly 1 cycle (de-asserted next cycle).
+    // trap_taken redirects the PC on its active edge. debug_frozen is latched
+    // on that edge and freezes the ISR entry from the following cycle.
     wire        debug_stall = debug_mode && run_mode &&
-                               (trap_taken || debug_frozen) && !btn_db_posedge;
+                               debug_frozen && !btn_db_posedge;
 
     reg [24:0] blink_count;
     reg [7:0] run_display;
@@ -157,9 +157,8 @@ module editable_pipeline_system_top #(
     // Debug single-step state machine (sw[8] = 1)
     //
     // debug_frozen latches on trap_taken rising edge.
-    // debug_stall is combinatorial (trap_taken || debug_frozen) —
-    // this freezes the pipeline in the SAME cycle trap_taken fires,
-    // so the breakpoint lands on the ISR entry (0x100), not 0x104.
+    // trap_taken first redirects PC to mtvec; debug_frozen then holds the
+    // redirected ISR entry until btn_db_posedge releases one cycle.
     // btn_db_posedge temporarily releases stall for 1 clock cycle.
     // ════════════════════════════════════════════════════════════════
     always @(posedge clk or posedge rst_btn) begin

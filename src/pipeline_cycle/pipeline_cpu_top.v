@@ -130,9 +130,12 @@ module pipeline_cpu_top #(
     // trap control
     wire trap_taken;
     wire shadow_restore;
+    wire interrupt_accept;
+    wire trap_stage_ready;
     wire [31:0] trap_target;
     wire [31:0] sh_ra, sh_sp, sh_t0, sh_t1, sh_t2;
     wire [31:0] mepc_val;
+    wire [31:0] reg_x1, reg_x2, reg_x5, reg_x6, reg_x7;
     // trap timer MMIO
     wire        mtimecmp_write;
     wire [31:0] mtimecmp_wdata;
@@ -230,20 +233,17 @@ module pipeline_cpu_top #(
         (ex_pc_src & ex_pred_taken & (ex_branch_target != ex_pred_target)));
     assign correct_pc = ex_pc_src ? ex_branch_target : ex_pc_plus4;
     wire ex_mret_taken;              // MRET in EX stage → redirect PC + flush IF/ID
-    // PC selection priority: trap > mret(EX) > mret(MEM fallback) > mispredict > predict-redirect > sequential
+    // PC selection priority: trap > mret > mispredict > predict-redirect > sequential
     assign next_pc = trap_taken         ? trap_target :
                      ex_mret_taken      ? mepc_val :
-                     shadow_restore     ? mepc_val :
                      ex_mispredict      ? correct_pc :
                      id_predict_redirect? id_pred_target :
                                           pc_plus4_if;
 
-    assign ex_mret_taken = ex_is_mret && id_ex_valid && !id_ex_flush;
-    // MRET must NOT flush ID/EX — the instruction must flow EX→MEM→WB
-    // so that shadow_restore fires and MIE/shadow regs are restored.
-    // Only IF/ID is flushed (via if_id_flush below) to kill the instruction
-    // that follows MRET.
-    wire id_ex_flush_reg = id_ex_flush;
+    assign ex_mret_taken = shadow_restore;
+    // Current MRET still advances through EX/MEM on this edge; the combined
+    // flush converts only the younger ID instruction into a bubble.
+    wire id_ex_flush_reg = id_ex_flush | ex_mret_taken;
 
     // --- multi-cycle division control ---
     assign ex_is_div   = id_ex_valid &&
@@ -316,7 +316,6 @@ module pipeline_cpu_top #(
     decoder u_decoder(.inst(if_id_inst), .opcode(id_opcode), .rd(id_rd), .funct3(id_funct3), .rs1(id_rs1), .rs2(id_rs2), .funct7(id_funct7));
     control u_control(.opcode(id_opcode), .branch(id_branch), .jal(id_jal), .mem_read(id_mem_read), .mem_to_reg(id_mem_to_reg), .alu_op(id_alu_op), .mem_write(id_mem_write), .alu_src(id_alu_src), .alu_a_zero(id_alu_a_zero), .reg_write(id_reg_write), .is_system(id_is_system));
     imm_gen u_imm_gen(.inst(if_id_inst), .imm(id_imm));
-    wire [31:0] reg_x1, reg_x2, reg_x5, reg_x6, reg_x7;  // for trap shadow capture
     assign wb_commit_write = wb_reg_write && mem_wb_valid;
     regfile u_regfile(.clk(clk), .rst(rst), .reg_write(wb_commit_write), .rs1(id_rs1), .rs2(id_rs2), .rd(wb_rd), .write_data(wb_data), .debug_index(debug_reg_index), .read_data1(id_reg_data1), .read_data2(id_reg_data2), .debug_data(debug_reg_data), .shadow_restore(shadow_restore), .sh_ra(sh_ra), .sh_sp(sh_sp), .sh_t0(sh_t0), .sh_t1(sh_t1), .sh_t2(sh_t2), .x1_val(reg_x1), .x2_val(reg_x2), .x5_val(reg_x5), .x6_val(reg_x6), .x7_val(reg_x7));
     assign id_reg_data1_bypass = (wb_commit_write && wb_rd != 5'b0 && wb_rd == id_rs1) ? wb_data : id_reg_data1;
@@ -386,6 +385,41 @@ module pipeline_cpu_top #(
                               .less_than(ex_less_than), .less_than_unsigned(ex_less_than_unsigned),
                               .funct3(ex_funct3), .pc_src(ex_pc_src));
 
+    // Accept traps only at a boundary where variable-latency work is complete.
+    // Asynchronous IRQs additionally wait until ID carries the exact resume PC
+    // and the current EX instruction has no memory/control/CSR side effect.
+    assign trap_stage_ready = !front_stall && !debug_stall;
+    wire ex_blocks_interrupt = id_ex_valid &&
+        (ex_mem_read || ex_mem_write || ex_branch || ex_jal ||
+         ex_is_csr || ex_is_mret || ex_is_ecall);
+    assign interrupt_accept = trap_stage_ready && if_id_valid &&
+                              !ex_blocks_interrupt && !ex_mispredict;
+
+    wire [31:0] ex_snapshot_data = ex_jal ? ex_pc_plus4 : ex_result;
+    wire [31:0] mem_snapshot_data = mem_jal ? mem_pc_plus4 :
+        (mem_mem_to_reg ? mem_read_data : mem_alu_result);
+
+    function automatic [31:0] trap_snapshot_value;
+        input [4:0] index;
+        input [31:0] reg_value;
+        begin
+            if (id_ex_valid && ex_reg_write && ex_rd == index && ex_rd != 5'b0)
+                trap_snapshot_value = ex_snapshot_data;
+            else if (ex_mem_valid && mem_reg_write && mem_rd == index && mem_rd != 5'b0)
+                trap_snapshot_value = mem_snapshot_data;
+            else if (wb_commit_write && wb_rd == index && wb_rd != 5'b0)
+                trap_snapshot_value = wb_data;
+            else
+                trap_snapshot_value = reg_value;
+        end
+    endfunction
+
+    wire [31:0] trap_x1 = trap_snapshot_value(5'd1, reg_x1);
+    wire [31:0] trap_x2 = trap_snapshot_value(5'd2, reg_x2);
+    wire [31:0] trap_x5 = trap_snapshot_value(5'd5, reg_x5);
+    wire [31:0] trap_x6 = trap_snapshot_value(5'd6, reg_x6);
+    wire [31:0] trap_x7 = trap_snapshot_value(5'd7, reg_x7);
+
     div_unit u_div_unit(
         .clk(clk), .rst(rst),
         .start(div_start),
@@ -398,17 +432,17 @@ module pipeline_cpu_top #(
         .clk(clk), .rst(rst),
         .irq_external(irq_external),       // connected from top-level via editable_pipeline_system_top
         .irq_external_ack(irq_external_ack),
-        .reg_x1(reg_x1), .reg_x2(reg_x2), .reg_x5(reg_x5), .reg_x6(reg_x6), .reg_x7(reg_x7),
+        .reg_x1(trap_x1), .reg_x2(trap_x2), .reg_x5(trap_x5), .reg_x6(trap_x6), .reg_x7(trap_x7),
         .wb_commit_write(wb_commit_write), .wb_rd(wb_rd), .wb_data(wb_data),
         .ex_is_csr(ex_is_csr), .ex_is_mret(ex_is_mret), .ex_is_ecall(ex_is_ecall),
+        .interrupt_accept(interrupt_accept), .trap_stage_ready(trap_stage_ready),
         .ex_csr_addr(ex_csr_addr), .ex_csr_wdata(ex_csr_wdata), .ex_csr_write(ex_csr_write),
         .ex_csr_funct3(ex_funct3),
         .csr_rdata(csr_rdata),
         .id_pc(if_id_pc),
         .ex_pc(ex_pc),
         .id_ex_valid(id_ex_valid),
-        .id_ex_flush(id_ex_flush), .ex_mem_valid(ex_mem_valid),
-        .ex_mem_flush(ex_mem_flush), .mem_wb_valid(mem_wb_valid),
+        .id_ex_flush(id_ex_flush),
         .trap_taken(trap_taken), .trap_target(trap_target),
         .shadow_restore(shadow_restore),
         .sh_ra(sh_ra), .sh_sp(sh_sp), .sh_t0(sh_t0), .sh_t1(sh_t1), .sh_t2(sh_t2),

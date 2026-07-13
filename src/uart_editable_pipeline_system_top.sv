@@ -120,7 +120,7 @@ module uart_editable_pipeline_system_top #(
     logic        trap_taken_d;
     wire         trap_taken_posedge = trap_taken && !trap_taken_d;
     wire         debug_stall = debug_mode && run_mode &&
-                                (trap_taken || debug_frozen) && !btn_db_posedge;
+                                debug_frozen && !btn_db_posedge;
     logic [1:0] display_mode;
     logic btn_display_meta;
     logic btn_display_sync;
@@ -213,8 +213,8 @@ module uart_editable_pipeline_system_top #(
     // Debug single-step state machine (sw[8] = 1)
     //
     // debug_frozen latches on trap_taken rising edge.
-    // debug_stall is combinatorial (trap_taken || debug_frozen) —
-    // this freezes the pipeline in the SAME cycle trap_taken fires.
+    // trap_taken redirects PC first; the registered debug_frozen state holds
+    // the ISR entry from the following cycle without a combinational loop.
     // btn_db_posedge temporarily releases stall for 1 clock cycle.
     // ════════════════════════════════════════════════════════════════
     always_ff @(posedge clk or posedge rst_btn) begin
